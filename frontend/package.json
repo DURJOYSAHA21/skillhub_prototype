@@ -1,0 +1,19 @@
+{
+  "name": "skillhub-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3030",
+    "build": "next build",
+    "start": "next start -p 3030"
+  },
+  "dependencies": {
+    "next": "14.2.21",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^3.4.17"
+  }
+}

@@ -1,0 +1,15 @@
+backend/.venv/
+backend/skillhub.db
+backend/uploads/
+__pycache__/
+.pytest_cache/
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+next-dev.log
+.DS_Store
+frontend/.env.local
+frontend/.vercel/
+.vercel-tmp/
+frontend/api/skillhub.db
+frontend/api/uploads/

@@ -1,0 +1,4 @@
+fastapi
+SQLAlchemy
+python-multipart
+fpdf2
