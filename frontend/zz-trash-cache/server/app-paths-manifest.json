@@ -1,0 +1,13 @@
+{
+  "/login/page": "app/login/page.js",
+  "/browse/page": "app/browse/page.js",
+  "/chat/page": "app/chat/page.js",
+  "/profile/page": "app/profile/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/signup/page": "app/signup/page.js",
+  "/page": "app/page.js",
+  "/forgot/page": "app/forgot/page.js",
+  "/course/[id]/page": "app/course/[id]/page.js",
+  "/learn/[id]/page": "app/learn/[id]/page.js",
+  "/match/page": "app/match/page.js"
+}
