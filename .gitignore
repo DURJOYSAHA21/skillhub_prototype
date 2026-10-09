@@ -13,3 +13,6 @@ frontend/.vercel/
 .vercel-tmp/
 frontend/api/skillhub.db
 frontend/api/uploads/
+frontend/.next-*/
+frontend/zz-trash-cache/
+frontend/dev-launch.cmd
