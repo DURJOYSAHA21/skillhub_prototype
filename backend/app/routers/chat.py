@@ -58,4 +58,6 @@ async def send(peer_id: int, text: str = Form(""),
                    file=_save_upload(file) if file else "")
     session.add(m)
     session.commit()
+    if peer_id != u.id:
+        db.notify(session, peer_id, "New message from %s" % u.name, "/chat")
     return {"message": "Sent.", "id": m.id}

@@ -39,6 +39,13 @@ export default function MatchPage() {
         <button className="btn" style={{ marginTop: 12 }} disabled={loading}>{loading ? "Matching..." : "Match Mentors"}</button>
         {err && <p className="err">{err}</p>}
       </form>
+      {loading && <p className="muted">Searching the mentor graph...</p>}
+      {!data && !loading && (
+        <div className="panel" style={{ textAlign: "center", padding: 30 }}>
+          <p style={{ fontWeight: 800, margin: "0 0 2px", fontSize: 18 }}>Tell us what you want to learn</p>
+          <p className="muted" style={{ margin: 0 }}>Type a skill above and press Match Mentors - we rank by depth, language fit and rating.</p>
+        </div>
+      )}
       {data && (
         <div>
           <p className="ok">"{data.query}" resolved to <b>{data.resolved_skill}</b> (via {data.resolution_method})
@@ -46,7 +53,7 @@ export default function MatchPage() {
           {data.results.map((r, i) => (
             <div key={r.mentor_id} className="card" style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <b>#{i + 1} {r.name}</b><span style={{ color: "var(--acc)", fontWeight: 800 }}>{r.match_percent}%</span>
+                <b>#{i + 1} <a href={"/mentor/" + r.mentor_id} style={{ color: "inherit" }}>{r.name}</a></b><span style={{ color: "var(--indigo)", fontWeight: 800 }}>{r.match_percent}%</span>
               </div>
               <p className="muted">{r.headline} · {r.country} · ★ {r.rating} ({r.reviews})</p>
               <div className="bar" style={{ marginBottom: 4 }}><i style={{ width: r.breakdown.skill * 100 + "%" }} /></div>

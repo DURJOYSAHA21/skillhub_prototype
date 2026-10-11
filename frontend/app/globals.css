@@ -127,3 +127,29 @@ td { padding:10px 8px; border-bottom:1px solid #eceaf4; }
 .tile:hover { background:#cfc9de; }
 .tile .ic { font-size:26px; }
 @media (max-width:860px){ .tiles{grid-template-columns:1fr 1fr;} }.tile.on { background:var(--indigo); color:#fff; box-shadow:0 8px 20px rgba(108,99,255,.35); }
+/* ===== mobile pass (390px targets) ===== */
+.notifpop { width: 330px; }
+@media (max-width:640px){
+  .wrap { padding:14px; }
+  .panel, .card, .glass { padding:16px; border-radius:18px; margin:12px 0; }
+  .hero { padding:26px 18px; border-radius:20px; }
+  .hero::after { font-size:74px; right:4%; top:5%; }
+  .big { font-size:clamp(24px, 8vw, 32px); }
+  .nav { padding:10px 14px; gap:10px; }
+  .nav a { font-size:13px; }
+  .authsplit { margin:18px auto; border-radius:20px; }
+  .authsplit .left { padding:26px 20px; }
+  .tiles { grid-template-columns:1fr; gap:12px; }
+  .tile { padding:16px; font-size:14px; }
+  .btn { padding:9px 16px; font-size:13px; }
+  .btn.sm { padding:5px 12px; }
+  .grid { gap:12px; }
+  .bub { max-width:88%; }
+  .threads { max-height:none; }
+  .notifpop { position:fixed !important; left:10px !important; right:10px !important; top:auto;
+    width:auto !important; max-height:60vh; }
+  .wrap table { display:block; overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; }
+  .wrap table { font-size:12px; }
+  th, td { padding:8px 6px; }
+  iframe { max-width:100%; }
+}

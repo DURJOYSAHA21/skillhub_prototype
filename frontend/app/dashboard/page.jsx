@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api, getUser, getToken, pdfUrl } from "@/lib/api";
+import AssessBuilder from "@/components/AssessBuilder";
 
 function openPdf(path) {
   fetch(pdfUrl(path), { headers: { Authorization: "Bearer " + getToken() } }).then(async (r) => {
@@ -60,8 +61,13 @@ function TxnTable({ rows }) {
 function LearnerDash() {
   const [courses, setCourses] = useState([]);
   const [txns, setTxns] = useState([]);
+  const [wish, setWish] = useState([]);
+  async function unwish(cid) {
+    try { await api("/wishlist/" + cid, { method: "POST" }); setWish(wish.filter((w) => w.course_id !== cid)); } catch (e) {}
+  }
   useEffect(() => {
     api("/my/courses").then((d) => setCourses(d.courses)).catch(() => {});
+    api("/wishlist").then((d) => setWish(d.courses)).catch(() => {});
     api("/txns/me").then((d) => setTxns(d.transactions)).catch(() => {});
   }, []);
   return (
@@ -87,6 +93,19 @@ function LearnerDash() {
           {courses.length === 0 && <p className="text-sm text-slate-400">Not enrolled in any course yet. <a className="text-emerald-700 underline" href="/browse">Browse courses</a>.</p>}
         </div>
       </div>
+      {wish.length > 0 && (
+        <div className={card + " mb-6"}>
+          <h2 className="font-semibold mb-3">Saved for later ({wish.length})</h2>
+          <div className="flex flex-wrap gap-2">
+            {wish.map((w) => (
+              <span key={w.course_id} className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1 text-sm">
+                <a href={"/course/" + w.course_id} className="font-medium">{w.title}</a>
+                <button className="text-xs text-rose-600" onClick={() => unwish(w.course_id)}>remove</button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className={card}>
         <h2 className="font-semibold mb-4">My transactions (req #19)</h2>
         <TxnTable rows={txns} />
@@ -100,7 +119,7 @@ function MentorDash() {
   const [txns, setTxns] = useState([]);
   const [earned, setEarned] = useState(0);
   const [nf, setNf] = useState({ title: "", description: "", category: "Tech", language: "en", price: 0, duration_hours: 4 });
-  const [lid, setLid] = useState({ course_id: "", title: "", description: "" });
+  const [lid, setLid] = useState({ course_id: "", title: "", description: "", content: "", video_url: "" });
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const load = () => {
@@ -122,6 +141,7 @@ function MentorDash() {
     setErr(""); setMsg("");
     const fd = new FormData();
     fd.append("course_id", lid.course_id); fd.append("title", lid.title); fd.append("description", lid.description);
+    fd.append("content", lid.content); fd.append("video_url", lid.video_url);
     if (e.target.elements.file.files[0]) fd.append("file", e.target.elements.file.files[0]);
     try {
       await api("/courses/" + lid.course_id + "/lessons", { method: "POST", body: fd });
@@ -161,8 +181,11 @@ function MentorDash() {
               <option value="">Pick course...</option>
               {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
             </select>
+            <p className="text-xs text-slate-400">Notes and a YouTube link make the lesson readable inside SkillHub.</p>
             <input className={inp} placeholder="Lesson title" value={lid.title} onChange={(e) => setLid({ ...lid, title: e.target.value })} />
             <input className={inp} placeholder="Lesson description" value={lid.description} onChange={(e) => setLid({ ...lid, description: e.target.value })} />
+            <textarea className={inp} rows={3} placeholder="Lesson notes (learners read these)" value={lid.content} onChange={(e) => setLid({ ...lid, content: e.target.value })} />
+            <input className={inp} placeholder="Video link (YouTube URL)" value={lid.video_url} onChange={(e) => setLid({ ...lid, video_url: e.target.value })} />
             <input className={inp} type="file" name="file" />
             <button className={btnDark} type="submit">Upload lesson</button>
           </form>
@@ -187,6 +210,7 @@ function MentorDash() {
           </div>
         </div>
       </div>
+      <AssessBuilder courses={courses} onDone={load} />
     </>
   );
 }

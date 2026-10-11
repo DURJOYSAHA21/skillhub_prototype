@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from . import db
-from .routers import auth, courses, enroll, assess, chat, admin, match
+from .routers import auth, courses, enroll, assess, chat, admin, match, product
 
 app = FastAPI(title="Skillhub API", description="One Platform to Learn Every Skill",
               version="1.0.0")
@@ -18,7 +18,7 @@ def startup():
 
 
 for r in (auth.router, courses.router, enroll.router, assess.router,
-          chat.router, admin.router, match.router):
+          chat.router, admin.router, match.router, product.router):
     app.include_router(r)
 
 

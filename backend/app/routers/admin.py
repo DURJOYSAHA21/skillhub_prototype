@@ -82,6 +82,11 @@ def approve_course(cid: int, body: ApproveIn, session: Session = Depends(get_db)
         raise HTTPException(404, "Course not found.")
     c.status = body.status
     session.commit()
+    label = {"published": "approved and is now live",
+             "rejected": "rejected. You can edit and resubmit it.",
+             "pending": "moved back to the review queue"}.get(body.status, body.status)
+    db.notify(session, c.mentor_id,
+              "Course update: '%s' was %s" % (c.title, label), "/dashboard")
     return {"message": f"Course {body.status}."}
 
 

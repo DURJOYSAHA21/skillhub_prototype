@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
 export default function ForgotPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
@@ -54,9 +56,11 @@ export default function ForgotPage() {
           <input type="password" value={pw.b} onChange={(e) => setPw({ ...pw, b: e.target.value })} placeholder="Repeat new password" />
           {err && <p className="err">{err}</p>}
           {done && <p className="ok">{done}</p>}
-          <button className="btn dark block" style={{ marginTop: 20 }}>{done ? "Go to Login" : "Confirm Changes"}</button>
+          {done ?
+            <button type="button" className="btn dark block" style={{ marginTop: 20 }}
+              onClick={() => router.push("/login")}>Go to Login</button> :
+            <button className="btn dark block" style={{ marginTop: 20 }}>Confirm Changes</button>}
         </form>
-        {done && <meta http-equiv="refresh" content="1.2;url=/login" />}
       </div>
     </div>
   );

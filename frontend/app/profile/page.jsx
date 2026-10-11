@@ -11,13 +11,13 @@ export default function ProfilePage() {
   const [ok, setOk] = useState("");
   useEffect(() => {
     const g = getUser();
-    if (!g) return;
+    if (!g) { window.location = "/login"; return; }
     setU(g);
     api("/auth/me").then((d) => {
       setF({ name: d.name || "", phone: d.phone || "", dob: d.dob || "", country: d.country || "", bio: d.bio || "", lang: d.lang || "en" });
     }).catch(() => {});
   }, []);
-  if (!u) return null;
+  if (!u) return (<><Nav /><main className="max-w-2xl mx-auto px-4 py-8 text-sm text-slate-500">Loading your profile...</main></>);
   async function save() {
     setErr(""); setOk("");
     try {

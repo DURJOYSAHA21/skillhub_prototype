@@ -1,6 +1,8 @@
 """Course catalog + lessons (SRS items 7, 11, 12, 14, 15)."""
-import os, uuid
-from fastapi import APIRouter, Depends, File, HTTPException, Header, UploadFile
+import json, os, uuid
+from datetime import datetime
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Header,
+                     Request, UploadFile)
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -19,16 +21,19 @@ def _optional_user(authorization: str, session: Session):
     return None
 
 
-def _course_dict(c: db.Course, mentor_name: str = ""):
+def _course_dict(c: db.Course, mentor_name: str = "", owner: bool = False):
     return {"id": c.id, "title": c.title, "description": c.description,
             "category": c.category, "language": c.language, "price": c.price,
             "type": c.type, "duration_hours": c.duration_hours, "status": c.status,
             "rating": c.rating, "reviews": c.reviews, "mentor": mentor_name,
             "mentor_id": c.mentor_id,
             "lessons": [{"id": l.id, "title": l.title, "position": l.position,
-                         "file": bool(l.file)} for l in c.lessons],
-            "quizzes": [{"id": q.id, "title": q.title, "published": q.published}
-                        for q in c.quizzes if q.published],
+                         "file": bool(l.file),
+                         "notes": bool(l.content or l.video_url)}
+                        for l in c.lessons],
+            "quizzes": [{"id": q.id, "title": q.title, "published": q.published,
+                         "questions": len(q.questions)}
+                        for q in c.quizzes if q.published or owner],
             "assignments": [{"id": a.id, "title": a.title,
                              "instructions": a.instructions} for a in c.assignments]}
 
@@ -59,7 +64,8 @@ def list_courses(q: str = "", category: str = "", language: str = "",
     out = []
     for c in query.order_by(db.Course.rating.desc()).all():
         m = session.get(db.User, c.mentor_id)
-        out.append(_course_dict(c, m.name if m else ""))
+        out.append(_course_dict(c, m.name if m else "",
+                                owner=bool(me and me.id == c.mentor_id)))
     return {"count": len(out), "courses": out}
 
 
@@ -98,7 +104,7 @@ def create_course(body: CourseIn, session: Session = Depends(get_db),
     session.add(c)
     session.commit()
     return {"message": "Course saved. Status: Pending until admin approval.",
-            "course": _course_dict(c, u.name)}
+            "course": _course_dict(c, u.name, owner=True)}
 
 
 @router.put("/courses/{cid}")
@@ -132,18 +138,35 @@ class LessonIn(BaseModel):
 
 
 @router.post("/courses/{cid}/lessons")
-async def add_lesson(cid: int, title: str = "", description: str = "",
-                     file: UploadFile = File(default=None),
+async def add_lesson(cid: int, request: Request,
                      session: Session = Depends(get_db),
                      u: db.User = Depends(current_user)):
+    fields = await request.form()
+    if not fields:
+        fields = request.query_params
+
+    def get(k, d=""):
+        try:
+            v = fields.get(k, d)
+        except AttributeError:
+            v = d
+        return (v if isinstance(v, str) else d) or d
+
     c = session.get(db.Course, cid)
     if not c or c.mentor_id != u.id:
         raise HTTPException(404, "Course not found.")
-    if not title.strip():
+    title = get("title").strip()
+    if not title:
         raise HTTPException(400, "Title is required.")
+    description, content = get("description"), get("content")
+    video_url = get("video_url").strip()
+    file = fields.get("file") if hasattr(fields, "get") else None
+    if file is not None and not hasattr(file, "filename"):
+        file = None
     pos = len(c.lessons) + 1
     l = db.Lesson(course_id=cid, title=title.strip(), description=description,
-                  position=pos, file=_save_upload(file) if file else None)
+                  position=pos, file=_save_upload(file) if file else None,
+                  content=content, video_url=video_url or None)
     session.add(l)
     session.commit()
     return {"message": "Content uploaded successfully.", "lesson_id": l.id}
@@ -159,3 +182,116 @@ def delete_lesson(lid: int, session: Session = Depends(get_db),
     session.delete(l)
     session.commit()
     return {"message": "Lesson removed."}
+
+
+class QuestionIn(BaseModel):
+    text: str
+    options: list
+    correct: int
+    marks: float = 5.0
+
+
+class QuizCreateIn(BaseModel):
+    title: str
+    description: str = ""
+    time_limit_min: int = 15
+    passing_score: float = 60.0
+    max_attempts: int = 3
+    published: bool = True
+    questions: list = []
+
+
+class AssignmentIn(BaseModel):
+    title: str
+    instructions: str = ""
+    due: str = ""
+    marks: float = 100.0
+
+
+def _own_course(session, cid, u):
+    c = session.get(db.Course, cid)
+    if not c or (c.mentor_id != u.id and u.role != "admin"):
+        raise HTTPException(404, "Course not found.")
+    return c
+
+
+@router.post("/courses/{cid}/quizzes")
+def create_quiz(cid: int, body: QuizCreateIn, session: Session = Depends(get_db),
+                u: db.User = Depends(current_user)):
+    c = _own_course(session, cid, u)
+    if not body.title.strip():
+        raise HTTPException(400, "Title is required.")
+    if len(body.questions) < 1:
+        raise HTTPException(400, "Add at least one question.")
+    qz = db.Quiz(course_id=c.id, title=body.title.strip(),
+                 description=body.description,
+                 time_limit_min=max(1, body.time_limit_min),
+                 passing_score=max(0.0, min(100.0, body.passing_score)),
+                 max_attempts=max(1, body.max_attempts), published=body.published)
+    session.add(qz)
+    session.flush()
+    for i, q in enumerate(body.questions):
+        opts = [str(o).strip() for o in list(q.get("options", []))[:6]] \
+            if isinstance(q, dict) else []
+        text = (q.get("text") or "").strip() if isinstance(q, dict) else ""
+        corr = int(q.get("correct", -1)) if isinstance(q, dict) else -1
+        if len(opts) != 4 or any(not o for o in opts) or not text:
+            session.rollback()
+            raise HTTPException(400, "Question %d: need text and 4 non-empty "
+                                     "options." % (i + 1))
+        if not (0 <= corr <= 3):
+            session.rollback()
+            raise HTTPException(400, "Question %d: pick the correct answer."
+                                % (i + 1))
+        session.add(db.Question(quiz_id=qz.id, text=text,
+                                options=json.dumps(opts), correct=corr,
+                                marks=max(1.0, float(q.get("marks", 5)))))
+    session.commit()
+    return {"message": "Quiz saved.", "quiz_id": qz.id,
+            "questions": len(qz.questions)}
+
+
+@router.put("/quizzes/{qid}/publish")
+def publish_quiz(qid: int, published: bool = True,
+                 session: Session = Depends(get_db),
+                 u: db.User = Depends(current_user)):
+    qz = session.get(db.Quiz, qid)
+    if not qz:
+        raise HTTPException(404, "Quiz not found.")
+    _own_course(session, qz.course_id, u)
+    qz.published = published
+    session.commit()
+    return {"message": "Quiz published." if published else "Quiz set to draft."}
+
+
+@router.delete("/quizzes/{qid}")
+def delete_quiz(qid: int, session: Session = Depends(get_db),
+               u: db.User = Depends(current_user)):
+    qz = session.get(db.Quiz, qid)
+    if not qz:
+        raise HTTPException(404, "Quiz not found.")
+    _own_course(session, qz.course_id, u)
+    session.delete(qz)
+    session.commit()
+    return {"message": "Quiz deleted."}
+
+
+@router.post("/courses/{cid}/assignments")
+def create_assignment(cid: int, body: AssignmentIn,
+                      session: Session = Depends(get_db),
+                      u: db.User = Depends(current_user)):
+    c = _own_course(session, cid, u)
+    if not body.title.strip():
+        raise HTTPException(400, "Title is required.")
+    due = None
+    if body.due:
+        try:
+            due = datetime.fromisoformat(body.due)
+        except ValueError:
+            raise HTTPException(400, "Due date must be YYYY-MM-DD.")
+    a = db.Assignment(course_id=c.id, title=body.title.strip(),
+                      instructions=body.instructions, due=due,
+                      marks=max(1.0, body.marks))
+    session.add(a)
+    session.commit()
+    return {"message": "Assignment saved.", "assignment_id": a.id}

@@ -4,11 +4,17 @@ import { useParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { api, getToken, API } from "@/lib/api";
 
+function ytEmbed(url) {
+  const m = (url || "").match(/(?:v=|youtu\.be\/|embed\/)([\w-]{6,})/);
+  return m ? "https://www.youtube.com/embed/" + m[1] : url;
+}
+
 export default function LearnPage() {
   const { id } = useParams();
   const [d, setD] = useState(null), [err, setErr] = useState(""), [msg, setMsg] = useState("");
   const [quiz, setQuiz] = useState(null), [ans, setAns] = useState({}), [res, setRes] = useState(null);
   const [file, setFile] = useState(null), [comment, setComment] = useState("");
+  const [open, setOpen] = useState(null);
   useEffect(() => {
     if (!getToken()) { window.location = "/login"; return; }
     load();
@@ -63,12 +69,30 @@ export default function LearnPage() {
         <div className="card">
           <h3>Lessons</h3>
           {d.lessons.map((l) => (
-            <div key={l.id} className={"lic" + (l.done ? " done" : "")}>
+            <div key={l.id} className={"lic" + (l.done ? " done" : "")} style={{ flexWrap: "wrap" }}>
               <span className={"chip " + (l.done ? "chip-completed" : "chip-open")}>{l.position}</span>
-              <span style={{ flex: 1 }}>{l.title}
-                {l.file && <> <a className="muted" href={API + "/files/" + l.file}>(file)</a></>}</span>
+              <span style={{ flex: 1, cursor: "pointer" }} onClick={() => setOpen(open === l.id ? null : l.id)}>
+                {l.title}
+                {(l.content || l.video_url) &&
+                  <span className="pill" style={{ marginLeft: 6 }}>{open === l.id ? "hide" : "view lesson"}</span>}
+                {l.file && <> <a className="muted" href={API + "/files/" + l.file}
+                  onClick={(e) => e.stopPropagation()}>(file)</a></>}
+              </span>
               {!l.done && <button className="btn sm teal" onClick={() => done(l.id)}>Mark complete</button>}
               {l.done && <span className="chip chip-completed">Completed</span>}
+              {open === l.id && (
+                <div style={{ width: "100%", background: "#faf8ff", borderRadius: 14, padding: 14, marginTop: 8 }}>
+                  {l.video_url &&
+                    <div style={{ position: "relative", paddingTop: "52%", borderRadius: 12, overflow: "hidden", background: "#111", marginBottom: 10 }}>
+                      <iframe src={ytEmbed(l.video_url)} title={l.title} allowFullScreen
+                        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} />
+                    </div>}
+                  <p style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 14 }}>
+                    {l.content || l.description || "No written notes for this lesson - follow the material and the video."}
+                  </p>
+                  {l.file && <p style={{ margin: "8px 0 0" }}>
+                    <a href={API + "/files/" + l.file}>Download lesson file</a></p>}
+                </div>)}
             </div>
           ))}
         </div>
@@ -84,7 +108,7 @@ export default function LearnPage() {
                 <div key={q.id} style={{ marginBottom: 12 }}>
                   <p><b>Q{i + 1}.</b> {q.text}</p>
                   {q.options.map((o, j) => (
-                    <label key={j} style={{ display: "inline-flex", gap: 6, margin: "2px 12px 2px 0", color: "var(--txt)" }}>
+                    <label key={j} style={{ display: "inline-flex", gap: 6, margin: "2px 12px 2px 0", color: "var(--ink)" }}>
                       <input type="radio" style={{ width: "auto" }} name={"q" + q.id} checked={ans[String(q.id)] === j}
                         onChange={() => setAns({ ...ans, [String(q.id)]: j })} /> {o}
                     </label>
@@ -102,7 +126,7 @@ export default function LearnPage() {
       <div className="card" style={{ marginTop: 14 }}>
         <h3>Assignments</h3>
         {d.assignments.map((a) => (
-          <div key={a.id} className="panel" style={{ background: "var(--panel2)" }}>
+          <div key={a.id} className="panel" style={{ background: "#f6f3fd" }}>
             <b>{a.title}</b> {a.due && <span className="muted"> - due {a.due}</span>}
             <p className="muted">{a.instructions}</p>
             <div className="grid g2">

@@ -30,6 +30,8 @@ def enroll_free(body: FreeIn, session: Session = Depends(get_db),
         raise HTTPException(400, "Already enrolled in this course.")
     session.add(db.Enrollment(learner_id=u.id, course_id=c.id))
     session.commit()
+    db.notify(session, c.mentor_id,
+              "%s enrolled in '%s'" % (u.name, c.title), "/dashboard")
     return {"message": "Enrolled successfully.", "course": c.title}
 
 
@@ -57,9 +59,12 @@ def pay_start(body: PayStartIn, session: Session = Depends(get_db),
     if not re.fullmatch(r"\d{4,6}", body.pin):
         raise HTTPException(400, "PIN must be 4-6 digits.")
     from .auth import _issue
-    code = _issue(session, u.email, "payment", u.id)
-    return {"message": f"OTP sent to {u.email} by the bank (simulated).",
-            "amount": c.price, "dev_otp": code}
+    code, sent = _issue(session, u.email, "payment", u.id)
+    out = {"message": f"OTP sent to {u.email} by the bank (simulated).",
+           "amount": c.price}
+    if not sent:
+        out["dev_otp"] = code
+    return out
 
 
 class PayConfirmIn(BaseModel):
@@ -89,6 +94,11 @@ def pay_confirm(body: PayConfirmIn, session: Session = Depends(get_db),
     if not session.query(db.Enrollment).filter_by(learner_id=u.id, course_id=c.id).first():
         session.add(db.Enrollment(learner_id=u.id, course_id=c.id))
     session.commit()
+    db.notify(session, u.id,
+              "Payment confirmed for '%s' (%s)" % (c.title, ref),
+              "/learn/%d" % c.id)
+    db.notify(session, c.mentor_id,
+              "New sale: '%s' bought by %s" % (c.title, u.name), "/dashboard")
     return {"message": "Payment successful. Course enrolled.", "txn_id": txn.id,
             "receipt_no": ref}
 

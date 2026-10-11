@@ -64,6 +64,7 @@ def learn(cid: int, session: Session = Depends(get_db), u: db.User = Depends(cur
             "completed": e.completed, "last_lesson": e.last_lesson,
             "lessons": [{"id": l.id, "title": l.title, "position": l.position,
                          "description": l.description, "file": l.file,
+                         "content": l.content or "", "video_url": l.video_url or "",
                          "done": l.id in done} for l in c.lessons],
             "quizzes": [{"id": q.id, "title": q.title, "time_limit_min": q.time_limit_min,
                          "passing_score": q.passing_score, "max_attempts": q.max_attempts}
@@ -84,8 +85,13 @@ def complete_lesson(lid: int, session: Session = Depends(get_db),
     done.add(lid)
     e.done_lessons = json.dumps(sorted(done))
     e.last_lesson = lid
+    was_done = bool(e.completed)
     _recalc(e, c)
     session.commit()
+    if e.completed and not was_done:
+        db.notify(session, u.id,
+                  "Course complete: '%s'. Your certificate is ready!" % c.title,
+                  "/learn/%d" % c.id)
     return {"message": "Progress saved.", "progress": e.progress,
             "completed": e.completed}
 
@@ -134,13 +140,22 @@ def submit_quiz(qid: int, body: QuizIn, session: Session = Depends(get_db),
     sub.attempts = (prev.attempts + 1) if prev else 1
     sub.submitted = datetime.utcnow()
     session.add(sub)
+    pset = set(json.loads(e.passed_quizzes or "[]"))
+    first_pass = passed and qid not in pset
     if passed:
-        pset = set(json.loads(e.passed_quizzes or "[]"))
         pset.add(qid)
         e.passed_quizzes = json.dumps(sorted(pset))
     c = session.get(db.Course, qz.course_id)
+    was_done = bool(e.completed)
     _recalc(e, c)
     session.commit()
+    if first_pass:
+        db.notify(session, u.id, "You passed '%s' with %s%%" % (qz.title, score),
+                  "/learn/%d" % c.id)
+    if e.completed and not was_done:
+        db.notify(session, u.id,
+                  "Course complete: '%s'. Your certificate is ready!" % c.title,
+                  "/learn/%d" % c.id)
     return {"score_percent": score, "passed": passed, "attempts_used": sub.attempts,
             "results": detail, "progress": e.progress, "completed": e.completed}
 

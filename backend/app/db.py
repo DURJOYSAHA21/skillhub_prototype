@@ -33,6 +33,41 @@ class User(Base):
     created = Column(DateTime, default=datetime.utcnow)
 
 
+class Review(Base):
+    __tablename__ = "reviews"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating = Column(Float, nullable=False)          # 1..5
+    comment = Column(Text, default="")
+    created = Column(DateTime, default=datetime.utcnow)
+
+
+class Wishlist(Base):
+    __tablename__ = "wishlist"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message = Column(String, default="")
+    link = Column(String, default="")
+    read = Column(Boolean, default=False)
+    created = Column(DateTime, default=datetime.utcnow)
+
+
+def notify(session, user_id, message, link=""):
+    """Persist an in-app notification for a user (never raises)."""
+    if not user_id:
+        return
+    session.add(Notification(user_id=user_id, message=message, link=link))
+    session.commit()
+
+
 class Otp(Base):
     __tablename__ = "otps"
     id = Column(Integer, primary_key=True)
@@ -119,6 +154,8 @@ class Lesson(Base):
     description = Column(Text, default="")
     position = Column(Integer, default=1)
     file = Column(String, nullable=True)           # stored upload path/name
+    content = Column(Text, default="")             # lesson notes shown in viewer
+    video_url = Column(String, nullable=True)      # YouTube link embedded in viewer
 
 class Quiz(Base):
     __tablename__ = "quizzes"
@@ -303,6 +340,17 @@ import json
 
 LESSON_TITLES = ["Intro and setup", "Core concepts", "Guided practice",
                  "Real project part 1", "Real project part 2", "Review and quiz prep"]
+LESSON_NOTES = ("Welcome to {t}.\n\nIn this lesson of \"{title}\", we cover the "
+    "key ideas step by step, then apply them in a short guided exercise. Follow "
+    "along in your own file, ask your instructor any question in chat, and mark "
+    "the lesson complete to move your progress bar forward.")
+DEMO_VIDEOS = ["https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+               "https://youtu.be/9bZkp7q19f0"]
+REV_SEED = [(5, "Excellent teaching style, very practical. Highly recommended!"),
+            (4, "Good content, a bit fast in the middle but great value."),
+            (5, "Loved the real project exercises. Learned a lot."),
+            (4, "Clear explanations and a nice pace for beginners.")]
+
 QUIZ_QS = [
     ("Which function looks up a value row by row?", ["VLOOKUP", "COUNT", "SUM", "LEN"], 0),
     ("What does a dashboard mainly help with?", ["Hiding data", "Visual insight",
@@ -357,9 +405,12 @@ def _seed(session):
         session.add(c)
         session.flush()
         for pos in range(1, nles + 1):
+            lt = LESSON_TITLES[pos % 6]
             session.add(Lesson(course_id=c.id,
-                               title=f"Lesson {pos}: {LESSON_TITLES[pos % 6]}",
-                               position=pos))
+                               title=f"Lesson {pos}: {lt}",
+                               position=pos,
+                               content=LESSON_NOTES.format(t=lt, title=title),
+                               video_url=(DEMO_VIDEOS[pos % 2] if pos % 2 == 0 else "")))
         if quiz:
             qz = Quiz(course_id=c.id, title="Final Quiz", time_limit_min=15,
                       passing_score=60.0, published=True)
@@ -388,6 +439,13 @@ def _seed(session):
         ChatMsg(sender_id=mentors[0].id, receiver_id=learners[0].id,
                 text="Saturday 8 PM Bangladesh time. Bring your dataset."),
     ])
+    for ci, c in enumerate(courses):
+        for k in range(2):
+            stars, txt = REV_SEED[(ci * 2 + k) % len(REV_SEED)]
+            session.add(Review(course_id=c.id, user_id=learners[(ci + k) % 3].id,
+                               rating=stars, comment=txt))
+    session.add(Wishlist(user_id=learners[0].id, course_id=courses[1].id))
+    session.add(Wishlist(user_id=learners[1].id, course_id=courses[4].id))
     session.commit()
 
 def init_db():

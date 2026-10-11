@@ -16,3 +16,7 @@ frontend/api/uploads/
 frontend/.next-*/
 frontend/zz-trash-cache/
 frontend/dev-launch.cmd
+backend/run.log
+backend/api-launch.cmd
+/01_landing_desktop.png
+/gitst.txt

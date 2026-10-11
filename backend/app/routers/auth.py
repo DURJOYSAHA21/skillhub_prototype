@@ -9,6 +9,8 @@ from ..deps import get_db, current_user
 from ..security import (hash_password, verify_password, password_ok, phone_ok,
                         create_token, gen_otp)
 
+from .. import mailer
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
@@ -30,7 +32,7 @@ def _issue(session, email, purpose, owner_id=None):
     session.add(db.Otp(email=email, code=code, purpose=purpose, owner_id=owner_id,
                        expires=datetime.utcnow() + timedelta(minutes=5)))
     session.commit()
-    return code
+    return code, mailer.send_otp(email, code, purpose)
 
 def _public(u: db.User):
     return {"id": u.id, "name": u.name, "email": u.email, "phone": u.phone,
@@ -63,8 +65,12 @@ def signup(body: SignupIn, session: Session = Depends(get_db)):
     except Exception:
         session.rollback()
         raise HTTPException(400, "Email or phone already registered.")
-    code = _issue(session, u.email, "signup", u.id)
-    return {"message": "Account created. Verify OTP to activate.", "dev_otp": code}
+    code, sent = _issue(session, u.email, "signup", u.id)
+    out = {"message": ("Account created. An OTP has been emailed to you."
+                       if sent else "Account created. Verify OTP to activate.")}
+    if not sent:
+        out["dev_otp"] = code
+    return out
 
 
 class VerifyIn(BaseModel):
@@ -102,14 +108,21 @@ def login(body: LoginIn, session: Session = Depends(get_db)):
     if u.status == "blocked":
         raise HTTPException(403, "Your account has been blocked by the admin.")
     if u.locked_until and u.locked_until > datetime.utcnow():
-        raise HTTPException(403, "Too many failed attempts. Try again later.")
+        mins = int((u.locked_until - datetime.utcnow()).total_seconds() // 60) + 1
+        raise HTTPException(403, "Too many failed attempts. Account locked "
+                                 "for about %d more minute(s)." % mins)
     if not verify_password(body.password, u.password_hash):
         u.fail_count = (u.fail_count or 0) + 1
+        msg = "Incorrect password."
         if u.fail_count >= 5:
             u.locked_until = datetime.utcnow() + timedelta(minutes=30)
             u.fail_count = 0
+            msg = "Too many failed attempts. Account locked for 30 minutes."
+        elif u.fail_count >= 3:
+            msg = ("Incorrect password. %d attempt(s) left before a "
+                   "30-minute lock." % (5 - u.fail_count))
         session.commit()
-        raise HTTPException(400, "Incorrect password.")
+        raise HTTPException(400, msg)
     u.fail_count = 0
     u.locked_until = None
     session.commit()
@@ -133,8 +146,12 @@ def forgot(body: EmailIn, session: Session = Depends(get_db)):
     u = session.query(db.User).filter_by(email=body.email.lower()).first()
     if not u:
         raise HTTPException(400, "Email not found.")
-    code = _issue(session, u.email, "reset", u.id)
-    return {"message": "OTP sent to registered email.", "dev_otp": code}
+    code, sent = _issue(session, u.email, "reset", u.id)
+    out = {"message": "OTP sent to registered email." if sent else
+           "OTP generated. (Demo: enter the code shown on screen.)"}
+    if not sent:
+        out["dev_otp"] = code
+    return out
 
 
 @router.post("/forgot-confirm")
