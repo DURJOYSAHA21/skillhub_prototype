@@ -21,7 +21,8 @@ def list_reviews(cid: int, session: Session = Depends(get_db)):
     for r in rows:
         u = session.get(db.User, r.user_id)
         out.append({"id": r.id, "name": u.name if u else "", "rating": r.rating,
-                    "comment": r.comment, "date": r.created.strftime("%Y-%m-%d")})
+                    "comment": r.comment, "reply": r.reply or "",
+                    "date": r.created.strftime("%Y-%m-%d")})
     return {"reviews": out}
 
 
@@ -52,7 +53,11 @@ def add_review(cid: int, body: ReviewIn, session: Session = Depends(get_db),
         c.reviews += 1
     db.notify(session, c.mentor_id,
               "New %d-star review on '%s'" % (body.rating, c.title),
-              "/course/%d" % cid)
+              "/course/%d" % cid, "course")
+    if body.rating <= 2:
+        db.notify_role(session, "admin",
+                       "Low rating (%d/5) on '%s' - worth a look" % (body.rating, c.title),
+                       "/dashboard", "system")
     session.commit()
     return {"message": "Review saved.", "rating": c.rating, "reviews": c.reviews}
 
@@ -69,6 +74,16 @@ def my_wishlist(session: Session = Depends(get_db),
                         "language": c.language, "rating": c.rating,
                         "mentor": m.name if m else ""})
     return {"courses": out}
+
+
+@router.delete("/wishlist/{cid}")
+def remove_wish(cid: int, session: Session = Depends(get_db),
+                u: db.User = Depends(current_user)):
+    w = session.query(db.Wishlist).filter_by(user_id=u.id, course_id=cid).first()
+    if w:
+        session.delete(w)
+        session.commit()
+    return {"saved": False, "message": "Removed from your saved list."}
 
 
 @router.post("/wishlist/{cid}")
@@ -93,7 +108,7 @@ def notifications(session: Session = Depends(get_db),
     rows = (session.query(db.Notification).filter_by(user_id=u.id)
             .order_by(db.Notification.id.desc()).limit(30).all())
     return {"notifications": [{"id": n.id, "message": n.message, "link": n.link,
-                               "read": bool(n.read),
+                               "kind": n.kind or "info", "read": bool(n.read),
                                "date": n.created.strftime("%Y-%m-%d %H:%M")}
                               for n in rows],
             "unread": session.query(db.Notification).filter_by(

@@ -16,7 +16,7 @@ export default function CoursePage() {
   const [enrolled, setEnrolled] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [myReview, setMyReview] = useState(null);
-  const [rev, setRev] = useState({ rating: 5, comment: "" });
+  const [rev, setRev] = useState({ rating: 0, comment: "" });
   const [wish, setWish] = useState(false);
   const u = getUser();
   useEffect(() => {
@@ -65,6 +65,8 @@ export default function CoursePage() {
   }
   async function saveReview(e) {
     e.preventDefault(); setErr("");
+    if (rev.rating < 1) { setErr("Please pick a star rating first."); return; }
+    if (!rev.comment.trim()) { setErr("Please write a short comment with your review."); return; }
     try {
       const d = await api("/courses/" + id + "/reviews", { method: "POST", body: rev });
       setMsg(d.message); setMyReview({ name: u.name, rating: rev.rating, comment: rev.comment, date: "today" });
@@ -83,7 +85,7 @@ export default function CoursePage() {
           style={{ float: "right", background: "none", border: "none", fontSize: 20, cursor: "pointer", width: "auto" }}>
           {wish ? "❤️" : "🤍"}</button>
         <h2 style={{ margin: "10px 0 4px" }}>{c.title}</h2>
-        <p className="muted">by <a href={`/mentor/${c.mentor_id}`} style={{ fontWeight: 600 }}>{c.mentor}</a> - ★ {c.rating} ({c.reviews} reviews) - {c.duration_hours}h</p>
+        <p className="muted">by <a href={`/mentor/${c.mentor_id}`} style={{ fontWeight: 600 }}>{c.mentor}</a> - {c.reviews > 0 ? "★ " + c.rating + " (" + c.reviews + " review" + (c.reviews === 1 ? "" : "s") + ")" : "Not rated yet"} - {c.duration_hours}h</p>
         <p>{c.description}</p>
         <b style={{ color: c.price ? "var(--orange)" : "var(--teal)", fontSize: 20 }}>{c.price ? "BDT " + c.price : "FREE"}</b>
         <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>

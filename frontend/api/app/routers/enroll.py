@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import db
 from ..deps import get_db, current_user
 from ..reports import receipt_pdf
+from ..security import allow_dev_otp
 
 router = APIRouter(tags=["enroll"])
 
@@ -31,7 +32,9 @@ def enroll_free(body: FreeIn, session: Session = Depends(get_db),
     session.add(db.Enrollment(learner_id=u.id, course_id=c.id))
     session.commit()
     db.notify(session, c.mentor_id,
-              "%s enrolled in '%s'" % (u.name, c.title), "/dashboard")
+              "%s enrolled in '%s'" % (u.name, c.title), "/dashboard", "course")
+    db.notify(session, u.id, "You are enrolled in '%s'. Start learning anytime!"
+              % c.title, "/learn/%d" % c.id, "course")
     return {"message": "Enrolled successfully.", "course": c.title}
 
 
@@ -54,6 +57,8 @@ def pay_start(body: PayStartIn, session: Session = Depends(get_db),
                                                    status="active").first()
     if not pm:
         raise HTTPException(400, "Payment method is not available.")
+    if session.query(db.Enrollment).filter_by(learner_id=u.id, course_id=c.id).first():
+        raise HTTPException(400, "You already have access to this course.")
     if not re.fullmatch(r"\d{12,19}", body.card_number):
         raise HTTPException(400, "Card number must be 12-19 digits.")
     if not re.fullmatch(r"\d{4,6}", body.pin):
@@ -62,7 +67,7 @@ def pay_start(body: PayStartIn, session: Session = Depends(get_db),
     code, sent = _issue(session, u.email, "payment", u.id)
     out = {"message": f"OTP sent to {u.email} by the bank (simulated).",
            "amount": c.price}
-    if not sent:
+    if not sent and allow_dev_otp():
         out["dev_otp"] = code
     return out
 
@@ -96,9 +101,9 @@ def pay_confirm(body: PayConfirmIn, session: Session = Depends(get_db),
     session.commit()
     db.notify(session, u.id,
               "Payment confirmed for '%s' (%s)" % (c.title, ref),
-              "/learn/%d" % c.id)
+              "/learn/%d" % c.id, "payment")
     db.notify(session, c.mentor_id,
-              "New sale: '%s' bought by %s" % (c.title, u.name), "/dashboard")
+              "New sale: '%s' bought by %s" % (c.title, u.name), "/dashboard", "payment")
     return {"message": "Payment successful. Course enrolled.", "txn_id": txn.id,
             "receipt_no": ref}
 
@@ -108,6 +113,7 @@ def _txn_rows(session, rows):
              "learner": (session.get(db.User, t.learner_id) or db.User(name="")).name,
              "course": (session.get(db.Course, t.course_id) or db.Course(title="")).title,
              "amount": t.amount, "method": t.method, "card_last4": t.card_last4,
+             "course_id": t.course_id, "learner_id": t.learner_id,
              "status": t.status} for t in rows]
 
 

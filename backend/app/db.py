@@ -10,7 +10,32 @@ from .security import hash_password
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.environ.get("SKILLHUB_DB") or os.path.join(ROOT, "skillhub.db")
 UPLOAD_DIR = os.environ.get("SKILLHUB_UPLOADS") or os.path.join(ROOT, "uploads")
-engine = create_engine("sqlite:///" + DB_PATH, echo=False)
+# Database is portable: production sets DATABASE_URL to a managed Postgres so
+# data survives serverless cold starts; local dev falls back to file SQLite.
+def _load_dotenv(path):
+    """Populate os.environ from a local .env (real env vars win)."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    except FileNotFoundError:
+        pass
+_load_dotenv(os.path.join(ROOT, ".env"))
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
+    engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+else:
+    engine = create_engine("sqlite:///" + DB_PATH, echo=False,
+                           connect_args={"check_same_thread": False})
 Session = sessionmaker(bind=engine, expire_on_commit=False)
 Base = declarative_base()
 
@@ -27,6 +52,8 @@ class User(Base):
     dob = Column(String, nullable=True)
     gender = Column(String, nullable=True)
     picture = Column(String, nullable=True)
+    goals = Column(String, default="[]")           # JSON skill names to learn
+    notify_email = Column(Boolean, default=True)
     status = Column(String, default="active")      # active | blocked
     fail_count = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
@@ -40,6 +67,7 @@ class Review(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     rating = Column(Float, nullable=False)          # 1..5
     comment = Column(Text, default="")
+    reply = Column(Text, default="")               # mentor response
     created = Column(DateTime, default=datetime.utcnow)
 
 
@@ -55,17 +83,45 @@ class Notification(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     message = Column(String, default="")
+    kind = Column(String, default="info")          # info|course|payment|chat|grade|system
     link = Column(String, default="")
     read = Column(Boolean, default=False)
     created = Column(DateTime, default=datetime.utcnow)
 
 
-def notify(session, user_id, message, link=""):
-    """Persist an in-app notification for a user (never raises)."""
+def notify(session, user_id, message, link="", kind="info"):
+    """Persist an in-app notification for one user (never raises)."""
     if not user_id:
         return
-    session.add(Notification(user_id=user_id, message=message, link=link))
+    session.add(Notification(user_id=user_id, message=message, link=link, kind=kind))
     session.commit()
+
+
+def notify_role(session, role, message, link="", kind="system", exclude=None):
+    """Broadcast a notification to every active user of a role."""
+    q = session.query(User).filter_by(status="active")
+    if role:
+        q = q.filter_by(role=role)
+    ids = [x.id for x in q.all() if x.id != exclude]
+    for i in ids:
+        session.add(Notification(user_id=i, message=message, link=link, kind=kind))
+    session.commit()
+    return len(ids)
+
+
+class LessonNote(Base):
+    __tablename__ = "lesson_notes"
+    id = Column(Integer, primary_key=True)
+    lesson_id = Column(Integer, ForeignKey("lessons.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    text = Column(Text, default="")
+    updated = Column(DateTime, default=datetime.utcnow)
+
+
+class Category(Base):
+    __tablename__ = "categories"
+    name = Column(String, primary_key=True)
+    icon = Column(String, default="📚")
 
 
 class Otp(Base):
@@ -101,6 +157,8 @@ class MentorProfile(Base):
     __tablename__ = "mentor_profiles"
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     headline = Column(String, default="")
+    about = Column(Text, default="")
+    verified = Column(Boolean, default=False)
     country = Column(String, default="Bangladesh")
     rating = Column(Float, default=4.5)
     reviews = Column(Integer, default=0)
@@ -136,10 +194,16 @@ class Course(Base):
     price = Column(Float, default=0.0)             # 0 = free
     type = Column(String, default="free")          # free | paid
     duration_hours = Column(Float, default=4.0)
-    status = Column(String, default="pending")     # pending|published|rejected
+    level = Column(String, default="Beginner")     # Beginner|Intermediate|Advanced
+    tags = Column(String, default="")              # comma separated keywords
+    thumbnail = Column(String, nullable=True)      # stored upload name
+    status = Column(String, default="pending")     # pending|published|rejected|unpublished
+    review_note = Column(Text, default="")         # admin feedback on approve/reject
+    featured = Column(Boolean, default=False)
     rating = Column(Float, default=4.5)
     reviews = Column(Integer, default=0)
     created = Column(DateTime, default=datetime.utcnow)
+    updated = Column(DateTime, default=datetime.utcnow)
     lessons = relationship("Lesson", cascade="all, delete-orphan",
                            order_by="Lesson.position")
     quizzes = relationship("Quiz", cascade="all, delete-orphan")
@@ -210,6 +274,8 @@ class AssignSubmit(Base):
     file = Column(String, default="")
     comment = Column(Text, default="")
     draft = Column(Boolean, default=True)
+    grade = Column(Float, nullable=True)           # marks awarded
+    feedback = Column(Text, default="")
     submitted = Column(DateTime, default=datetime.utcnow)
 
 class Enrollment(Base):
@@ -232,6 +298,7 @@ class ChatMsg(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     text = Column(Text, default="")
     file = Column(String, default="")
+    read = Column(Boolean, default=False)
     ts = Column(DateTime, default=datetime.utcnow)
 
 
@@ -305,6 +372,11 @@ SK = [
     (19, "Cooking", "Lifestyle", ["baking"]),
     (20, "Personal Finance", "Business", ["budgeting", "investing basics"]),
 ]
+CATEGORIES = [("Tech", "\U0001F4BB"), ("Office", "\U0001F4CA"), ("Design", "\U0001F3A8"),
+              ("Media", "\U0001F3AC"), ("Business", "\U0001F4BC"), ("Language", "\U0001F5E4"),
+              ("Music", "\U0001F3B8"), ("Engineering", "\u2699"), ("Soft Skills", "\U0001F91D"),
+              ("Lifestyle", "\U0001F373")]
+
 MENTORS = [  # name, email, country, headline, [(skill, prof, yrs)], [(code, flu)], rating, reviews
     ("Rifat Hasan", "rifat@skillhub.dev", "Bangladesh",
      "Excel automation consultant for garment factories", [(4, 5, 9)],
@@ -364,6 +436,8 @@ QUIZ_QS = [
 def _seed(session):
     for c, n in LANGS:
         session.add(Language(code=c, name=n))
+    for nm, ic in CATEGORIES:
+        session.add(Category(name=nm, icon=ic))
     for sid, nm, cat, als in SK:
         session.add(Skill(id=sid, name=nm, category=cat))
         for a in als:
@@ -378,6 +452,10 @@ def _seed(session):
         session.add(u)
         session.flush()
         session.add(MentorProfile(user_id=u.id, headline=hl, country=country,
+                                  about="%s. I teach step by step with real "
+                                        "projects and answer questions in chat "
+                                        "within a day." % hl,
+                                  verified=(i < 3),
                                   rating=rt, reviews=rv, avg_reply_hours=2.0 + i,
                                   completion=78.0 + i))
         for sid, p, y in sks:
@@ -391,6 +469,8 @@ def _seed(session):
                                   ("John Doe", "john@skillhub.dev")]):
         u = User(name=nm, email=em, phone="018%08d" % (200 + j),
                  password_hash=hash_password("Learner123"), role="learner",
+                 goals=json.dumps([["Microsoft Excel", "Data Science"],
+                                   ["UI/UX Design"], ["Python Programming"]][j]),
                  lang="bn" if j < 2 else "en")
         session.add(u)
         session.flush()
@@ -444,6 +524,28 @@ def _seed(session):
             stars, txt = REV_SEED[(ci * 2 + k) % len(REV_SEED)]
             session.add(Review(course_id=c.id, user_id=learners[(ci + k) % 3].id,
                                rating=stars, comment=txt))
+    demo = Course(mentor_id=mentors[3].id, title="Design Systems in Figma (Pro)",
+                  description="Awaiting review: components, tokens and handoff.",
+                  category="Design", language="en", price=2200, type="paid",
+                  level="Intermediate", duration_hours=9, status="pending",
+                  tags="figma, ui, design system")
+    session.add(demo)
+    session.flush()
+    for pos, lt in enumerate(LESSON_TITLES[:3], start=1):
+        session.add(Lesson(course_id=demo.id, title="Lesson %d: %s" % (pos, lt),
+                           position=pos, content=LESSON_NOTES.format(t=lt,
+                           title=demo.title)))
+    session.add(Review(course_id=courses[0].id, user_id=learners[1].id, rating=5,
+                       comment="The dashboards module alone paid for itself.",
+                       reply="Thank you Karim! Try the automation lesson next."))
+    a0 = courses[0].assignments[0]
+    session.add(AssignSubmit(assignment_id=a0.id, learner_id=learners[0].id,
+                             comment="Submitted my sales dashboard workbook.",
+                             draft=False, grade=88.0,
+                             feedback="Great pivot work - tighten the chart labels."))
+    session.add(LessonNote(lesson_id=courses[0].lessons[0].id,
+                           user_id=learners[0].id,
+                           text="Remember: absolute refs use $ before row and column."))
     session.add(Wishlist(user_id=learners[0].id, course_id=courses[1].id))
     session.add(Wishlist(user_id=learners[1].id, course_id=courses[4].id))
     session.commit()

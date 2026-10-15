@@ -1,4 +1,4 @@
-﻿"""Skillhub Match feature: global language-aware mentor ranking."""
+"""Skillhub Match feature: global language-aware mentor ranking."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .. import db
@@ -12,8 +12,15 @@ router = APIRouter(tags=["match"])
 def meta(session: Session = Depends(get_db)):
     skills = session.query(db.Skill).order_by(db.Skill.name).all()
     langs = session.query(db.Language).all()
+    cats = session.query(db.Category).order_by(db.Category.name).all()
+    names = sorted({c.category for c in session.query(db.Course)
+                    .filter_by(status="published").all()} |
+                   {c.name for c in cats})
     return {"skills": [{"id": s.id, "name": s.name, "category": s.category} for s in skills],
-            "languages": [{"code": l.code, "name": l.name} for l in langs]}
+            "languages": [{"code": l.code, "name": l.name} for l in langs],
+            "categories": [{"name": c.name, "icon": c.icon} for c in cats],
+            "all_categories": names,
+            "levels": ["Beginner", "Intermediate", "Advanced"]}
 
 
 @router.get("/skills/resolve")
@@ -60,12 +67,20 @@ def mentor(mid: int, session: Session = Depends(get_db)):
     skills = [{"skill": (session.get(db.Skill, s.skill_id) or db.Skill(name="")).name,
                "proficiency": s.proficiency, "years": s.years}
               for s in session.query(db.MentorSkill).filter_by(user_id=mid).all()]
-    courses = [{"id": c.id, "title": c.title, "price": c.price, "language": c.language}
-               for c in session.query(db.Course).filter_by(mentor_id=mid,
-                                                           status="published").all()]
-    return {"id": u.id, "name": u.name, "headline": p.headline if p else "",
+    courses = [{"id": c.id, "title": c.title, "price": c.price, "language": c.language,
+                 "level": c.level, "rating": c.rating, "reviews": c.reviews,
+                 "students": session.query(db.Enrollment).filter_by(course_id=c.id).count()}
+                for c in session.query(db.Course).filter_by(mentor_id=mid,
+                                                            status="published").all()]
+    students = sum(session.query(db.Enrollment).filter_by(course_id=c["id"]).count()
+                   for c in courses)
+    return {"id": u.id, "name": u.name, "picture": u.picture or "",
+            "headline": p.headline if p else "", "about": (p.about if p else "") or "",
+            "verified": bool(p and p.verified), "students": students,
             "country": p.country if p else "", "rating": p.rating if p else 0,
             "reviews": p.reviews if p else 0,
             "languages": [f"{lang_names.get(l.code, l.code)} ({l.fluency})"
                           for l in session.query(db.MentorLanguage).filter_by(user_id=mid).all()],
+            "langs": [{"code": l.code, "fluency": l.fluency}
+                      for l in session.query(db.MentorLanguage).filter_by(user_id=mid).all()],
             "skills": skills, "courses": courses}

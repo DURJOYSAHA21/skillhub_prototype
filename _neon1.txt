@@ -1,0 +1,6 @@
+node=v24.18.0
+npm=11.16.0
+root_pkg=False
+frontend_pkg=True
+=== npm i -g neon@latest ===
+

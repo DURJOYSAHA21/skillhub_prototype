@@ -1,4 +1,4 @@
-﻿"""Learning, quizzes, assignments, progress, certificates (SRS 9, 10, 15)."""
+"""Learning, quizzes, assignments, progress, certificates (SRS 9, 10, 15)."""
 import json, os, uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
@@ -44,12 +44,21 @@ def _save_upload(file: UploadFile) -> str:
 @router.get("/my/courses")
 def my_courses(session: Session = Depends(get_db), u: db.User = Depends(current_user)):
     rows = []
-    for e in session.query(db.Enrollment).filter_by(learner_id=u.id).all():
+    for e in session.query(db.Enrollment).filter_by(learner_id=u.id) \
+            .order_by(db.Enrollment.id.desc()).all():
         c = session.get(db.Course, e.course_id)
         if c:
+            m = session.get(db.User, c.mentor_id)
+            nxt = next((l.id for l in c.lessons if l.id not in
+                        set(json.loads(e.done_lessons or "[]"))), 0)
             rows.append({"enrollment_id": e.id, "course_id": c.id, "title": c.title,
                          "language": c.language, "progress": e.progress,
-                         "completed": e.completed, "last_lesson": e.last_lesson})
+                         "lessons": len(c.lessons), "hours": c.duration_hours,
+                         "price": c.price, "category": c.category,
+                         "mentor": m.name if m else "", "mentor_id": c.mentor_id,
+                         "next_lesson": nxt, "resume": "/learn/%d" % c.id,
+                         "completed": e.completed, "last_lesson": e.last_lesson,
+                         "enrolled": e.enrolled.strftime("%Y-%m-%d")})
     return {"count": len(rows), "courses": rows}
 
 
@@ -60,17 +69,40 @@ def learn(cid: int, session: Session = Depends(get_db), u: db.User = Depends(cur
         raise HTTPException(404, "Course not found.")
     e = _enr(session, u, cid)
     done = set(json.loads(e.done_lessons or "[]"))
+    notes = {n.lesson_id: n.text for n in session.query(db.LessonNote)
+             .filter_by(user_id=u.id).all()
+             if n.lesson_id in {l.id for l in c.lessons}}
+    m = session.get(db.User, c.mentor_id)
+    subs = {s.quiz_id: s for s in session.query(db.Submission)
+            .filter_by(learner_id=u.id).all()}
+    asubs = {x.assignment_id: x for x in session.query(db.AssignSubmit)
+             .filter_by(learner_id=u.id).all()}
     return {"course_id": cid, "title": c.title, "progress": e.progress,
             "completed": e.completed, "last_lesson": e.last_lesson,
+            "mentor": m.name if m else "", "mentor_id": c.mentor_id,
+            "price": c.price, "level": c.level, "category": c.category,
+            "lessons_total": len(c.lessons), "lessons_done": len(done),
+            "hours": c.duration_hours,
             "lessons": [{"id": l.id, "title": l.title, "position": l.position,
                          "description": l.description, "file": l.file,
                          "content": l.content or "", "video_url": l.video_url or "",
-                         "done": l.id in done} for l in c.lessons],
-            "quizzes": [{"id": q.id, "title": q.title, "time_limit_min": q.time_limit_min,
-                         "passing_score": q.passing_score, "max_attempts": q.max_attempts}
+                         "note": notes.get(l.id, ""), "done": l.id in done}
+                        for l in c.lessons],
+            "quizzes": [{"id": q.id, "title": q.title, "questions": len(q.questions),
+                         "time_limit_min": q.time_limit_min,
+                         "passing_score": q.passing_score,
+                         "attempts_left": max(0, q.max_attempts -
+                                              (subs[q.id].attempts if q.id in subs else 0)),
+                         "best_score": subs[q.id].score if q.id in subs else None,
+                         "passed": bool(subs[q.id].passed) if q.id in subs else False,
+                         "max_attempts": q.max_attempts}
                         for q in c.quizzes if q.published],
-            "assignments": [{"id": a.id, "title": a.title, "instructions": a.instructions,
-                             "due": a.due.strftime("%Y-%m-%d") if a.due else ""}
+            "assignments": [{"id": a.id, "title": a.title, "marks": a.marks,
+                             "instructions": a.instructions,
+                             "due": a.due.strftime("%Y-%m-%d") if a.due else "",
+                             "submitted": bool(a.id in asubs and not asubs[a.id].draft),
+                             "grade": asubs[a.id].grade if a.id in asubs else None,
+                             "feedback": (asubs[a.id].feedback or "") if a.id in asubs else ""}
                             for a in c.assignments]}
 
 @router.post("/lessons/{lid}/complete")
@@ -178,7 +210,14 @@ async def submit_assignment(aid: int, comment: str = Form(""),
     s.submitted = datetime.utcnow()
     session.add(s)
     session.commit()
-    return {"message": "Draft saved." if draft else "Assignment submitted."}
+    if not draft:
+        crs = session.get(db.Course, a.course_id)
+        if crs:
+            db.notify(session, crs.mentor_id,
+                      "%s submitted '%s' for grading" % (u.name, a.title),
+                      "/dashboard", "grade")
+    return {"message": "Draft saved." if draft else
+            "Assignment submitted. Your instructor will grade it."}
 
 
 @router.get("/assignments/{aid}/submissions")
@@ -188,11 +227,16 @@ def assignment_subs(aid: int, session: Session = Depends(get_db),
     c = session.get(db.Course, a.course_id) if a else None
     if not c or (c.mentor_id != u.id and u.role != "admin"):
         raise HTTPException(403, "Mentor only.")
-    rows = [{"learner": (session.get(db.User, s.learner_id) or db.User(name="")).name,
-             "file": s.file, "comment": s.comment, "draft": s.draft,
-             "submitted": s.submitted.strftime("%Y-%m-%d %H:%M")}
-            for s in session.query(db.AssignSubmit).filter_by(assignment_id=aid).all()]
-    return {"assignment": a.title, "submissions": rows}
+    rows = [{"id": s.id, "learner_id": s.learner_id,
+              "learner": (session.get(db.User, s.learner_id) or db.User(name="")).name,
+              "file": s.file, "comment": s.comment, "draft": s.draft,
+              "grade": s.grade, "feedback": s.feedback or "",
+              "marks": a.marks,
+              "submitted": s.submitted.strftime("%Y-%m-%d %H:%M")}
+             for s in session.query(db.AssignSubmit).filter_by(assignment_id=aid).all()]
+    return {"assignment": a.title, "marks": a.marks,
+            "ungraded": len([r for r in rows if not r["draft"] and r["grade"] is None]),
+            "submissions": rows}
 
 
 @router.get("/courses/{cid}/certificate")

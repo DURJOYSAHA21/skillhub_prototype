@@ -1,11 +1,47 @@
-﻿"""Auth primitives: PBKDF2 hashing, stdlib HS256 JWT, OTP helpers."""
+"""Auth primitives: PBKDF2 hashing, stdlib HS256 JWT, OTP helpers."""
 import base64, hashlib, hmac, json, os, secrets, time
 
 DEV_SECRET = "dev-secret-change-me"
 
 
+def is_production() -> bool:
+    """True when explicitly deployed for public use (SKILLHUB_ENV=prod|production)."""
+    return os.environ.get("SKILLHUB_ENV", "").strip().lower() in ("prod", "production")
+
+
+def allow_dev_otp() -> bool:
+    """Whether an OTP may be leaked back in API responses for convenience.
+
+    Allowed in local dev; in production only when the operator explicitly opts
+    in with SKILLHUB_ALLOW_DEV_OTP=1 (for a private demo without SMTP).
+    """
+    if not is_production():
+        return True
+    return os.environ.get("SKILLHUB_ALLOW_DEV_OTP", "").strip() == "1"
+
+
 def _secret() -> str:
-    return os.environ.get("SKILLHUB_SECRET", DEV_SECRET)
+    s = os.environ.get("SKILLHUB_SECRET")
+    if s:
+        return s
+    if is_production():
+        raise RuntimeError("SKILLHUB_SECRET must be set in production")
+    return DEV_SECRET
+
+
+def validate_production_config() -> None:
+    """Fail fast at startup when a public deployment is misconfigured."""
+    if not is_production():
+        return
+    s = os.environ.get("SKILLHUB_SECRET", "")
+    if not s:
+        raise RuntimeError("Refusing to start in production without SKILLHUB_SECRET")
+    if len(s) < 16:
+        raise RuntimeError("SKILLHUB_SECRET is too short - use a random value of 32+ chars")
+    from . import mailer
+    if not mailer.enabled() and not allow_dev_otp():
+        raise RuntimeError("SMTP is not configured for production. Set SMTP_HOST/SMTP_USER/"
+                           "SMTP_PASS, or SKILLHUB_ALLOW_DEV_OTP=1 for a private demo.")
 
 
 def hash_password(pw: str) -> str:

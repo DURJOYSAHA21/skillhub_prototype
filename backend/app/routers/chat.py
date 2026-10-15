@@ -1,4 +1,4 @@
-﻿"""1:1 chat between learners and mentors (SRS item 12), polling-friendly."""
+"""1:1 chat between learners and mentors (SRS item 12), polling-friendly."""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -23,9 +23,13 @@ def threads(session: Session = Depends(get_db), u: db.User = Depends(current_use
             or_(db.ChatMsg.sender_id == pid, db.ChatMsg.receiver_id == pid)
         ).order_by(db.ChatMsg.id.desc()).first()
         if p:
+            unread = session.query(db.ChatMsg).filter_by(receiver_id=u.id,
+                                                         sender_id=pid,
+                                                         read=False).count()
             out.append({"user_id": p.id, "name": p.name, "role": p.role,
                         "last": (last.text or "[attachment]") if last else "",
-                        "last_ts": last.ts.strftime("%Y-%m-%d %H:%M") if last else ""})
+                        "last_ts": last.ts.strftime("%Y-%m-%d %H:%M") if last else "",
+                        "unread": unread})
     return {"threads": sorted(out, key=lambda x: x["last_ts"], reverse=True)}
 
 
@@ -38,6 +42,10 @@ def conversation(peer_id: int, since_id: int = 0,
         or_(db.ChatMsg.sender_id == peer_id, db.ChatMsg.receiver_id == peer_id),
         db.ChatMsg.id > since_id).order_by(db.ChatMsg.id).limit(200).all()
     peer = session.get(db.User, peer_id)
+    for m in rows:
+        if m.receiver_id == u.id and not m.read:
+            m.read = True
+    session.commit()
     return {"peer": {"id": peer.id, "name": peer.name, "role": peer.role} if peer else None,
             "messages": [{"id": m.id, "from": m.sender_id, "to": m.receiver_id,
                           "text": m.text, "file": m.file,
@@ -54,6 +62,9 @@ async def send(peer_id: int, text: str = Form(""),
         raise HTTPException(404, "User not found.")
     if not text.strip() and not file:
         raise HTTPException(400, "Message is empty.")
+    db.notify(session, peer_id, "%s sent you a message: %s" %
+              (u.name, (text.strip() or "[attachment]")[:70]),
+              "/chat?to=%d" % u.id, "chat")
     m = db.ChatMsg(sender_id=u.id, receiver_id=peer_id, text=text.strip(),
                    file=_save_upload(file) if file else "")
     session.add(m)

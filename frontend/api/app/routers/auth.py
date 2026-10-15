@@ -1,13 +1,14 @@
 """Auth & profile endpoints (SRS items 1-6)."""
+import json
 import re
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import db
 from ..deps import get_db, current_user
 from ..security import (hash_password, verify_password, password_ok, phone_ok,
-                        create_token, gen_otp)
+                        create_token, gen_otp, allow_dev_otp)
 
 from .. import mailer
 
@@ -36,7 +37,9 @@ def _issue(session, email, purpose, owner_id=None):
 
 def _public(u: db.User):
     return {"id": u.id, "name": u.name, "email": u.email, "phone": u.phone,
-            "role": u.role, "lang": u.lang, "status": u.status}
+            "role": u.role, "lang": u.lang, "status": u.status,
+            "dob": u.dob or "", "gender": u.gender or "",
+            "picture": u.picture or "", "goals": json.loads(u.goals or "[]")}
 
 
 @router.post("/signup")
@@ -65,10 +68,16 @@ def signup(body: SignupIn, session: Session = Depends(get_db)):
     except Exception:
         session.rollback()
         raise HTTPException(400, "Email or phone already registered.")
+    if body.role == "mentor":
+        session.add(db.MentorProfile(user_id=u.id, headline="", verified=False))
+    db.notify_role(session, "admin",
+                   "New %s registered: %s (%s)" % (body.role, u.name, u.email),
+                   "/dashboard", "system", exclude=u.id)
+    session.commit()
     code, sent = _issue(session, u.email, "signup", u.id)
     out = {"message": ("Account created. An OTP has been emailed to you."
                        if sent else "Account created. Verify OTP to activate.")}
-    if not sent:
+    if not sent and allow_dev_otp():
         out["dev_otp"] = code
     return out
 
@@ -89,6 +98,10 @@ def verify(body: VerifyIn, session: Session = Depends(get_db)):
         raise HTTPException(400, "Invalid or expired OTP.")
     u.status = "active"
     session.commit()
+    if u.role == "mentor":
+        db.notify_role(session, "admin",
+                       "Mentor profile ready for review: %s" % u.name,
+                       "/dashboard", "system", exclude=u.id)
     return {"message": "Email verified successfully.", "token": create_token(u.id, u.role),
             "user": _public(u)}
 
@@ -149,7 +162,7 @@ def forgot(body: EmailIn, session: Session = Depends(get_db)):
     code, sent = _issue(session, u.email, "reset", u.id)
     out = {"message": "OTP sent to registered email." if sent else
            "OTP generated. (Demo: enter the code shown on screen.)"}
-    if not sent:
+    if not sent and allow_dev_otp():
         out["dev_otp"] = code
     return out
 
@@ -204,6 +217,8 @@ class ProfileIn(BaseModel):
     dob: str = ""
     gender: str = ""
     lang: str = ""
+    goals: str = ""            # comma separated skill names
+    notify_email: bool = True
 
 
 @router.put("/profile")
@@ -224,11 +239,28 @@ def update_profile(body: ProfileIn, session: Session = Depends(get_db),
         raise HTTPException(400, "Email or phone already registered by another user.")
     if body.dob and body.dob > datetime.utcnow().date().isoformat():
         raise HTTPException(400, "Date of birth cannot be a future date.")
-    if body.lang and body.lang not in ("en", "bn"):
+    if body.lang and not session.get(db.Language, body.lang):
         raise HTTPException(400, "Unsupported language.")
     u.name, u.email, u.phone = name, email, phone
     u.dob = body.dob or u.dob
     u.gender = body.gender or u.gender
     u.lang = body.lang or u.lang          # req #13: preference persisted per user
+    u.notify_email = bool(body.notify_email)
+    if body.goals:
+        names = [g.strip() for g in body.goals.split(",") if g.strip()][:12]
+        u.goals = json.dumps(names)
     session.commit()
     return {"message": "Profile info updated successfully.", "user": _public(u)}
+
+
+@router.post("/picture")
+async def upload_picture(request: Request, session: Session = Depends(get_db),
+                         u: db.User = Depends(current_user)):
+    form = await request.form()
+    up = form.get("file") if hasattr(form, "get") else None
+    if up is None or not hasattr(up, "filename") or not up.filename:
+        raise HTTPException(400, "Choose an image file first.")
+    from .courses import _save_upload
+    u.picture = _save_upload(up)
+    session.commit()
+    return {"message": "Photo updated.", "picture": u.picture}

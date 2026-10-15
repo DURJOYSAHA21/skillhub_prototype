@@ -67,7 +67,8 @@ export default function LearnPage() {
       </div>
       <div className="grid g2">
         <div className="card">
-          <h3>Lessons</h3>
+          <h3>Lessons ({d.lessons.length})</h3>
+          {!d.lessons.length && <p className="muted">No lessons yet - the instructor is still adding course content. Check back soon.</p>}
           {d.lessons.map((l) => (
             <div key={l.id} className={"lic" + (l.done ? " done" : "")} style={{ flexWrap: "wrap" }}>
               <span className={"chip " + (l.done ? "chip-completed" : "chip-open")}>{l.position}</span>
@@ -98,6 +99,7 @@ export default function LearnPage() {
         </div>
         <div className="card">
           <h3>Quiz</h3>
+          {!quiz && !d.quizzes.length && <p className="muted">No quiz for this course yet.</p>}
           {!quiz && d.quizzes.map((qz) => (
             <p key={qz.id}><button className="chip" onClick={() => openQuiz(qz.id)}>Start: {qz.title} ({qz.time_limit_min} min, pass {qz.passing_score}%)</button></p>
           ))}

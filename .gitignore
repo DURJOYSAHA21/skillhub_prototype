@@ -20,3 +20,8 @@ backend/run.log
 backend/api-launch.cmd
 /01_landing_desktop.png
 /gitst.txt
+backend/.env
+pgdata/
+.neon
+node_modules/
+.env.local

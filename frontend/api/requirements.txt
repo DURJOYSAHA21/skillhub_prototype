@@ -2,3 +2,4 @@ fastapi
 SQLAlchemy
 python-multipart
 fpdf2
+psycopg2-binary
