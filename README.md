@@ -1,150 +1,228 @@
-# SkillHub - One Platform to Learn Every Skill
+# SkillHub: One Platform to Learn Every Skill
 
-Full-stack implementation of the SkillHub platform from the AIUB SE project SRS
-(77-page spec, 24 functional requirements), plus the SkillHub Match mentor-matching
-engine, an in-app course concierge (SkillBot), notifications, wishlist & reviews,
-and a global multi-language UI. Built with **FastAPI + PostgreSQL (SQLite fallback) + Next.js 14**.
+A full-stack online learning marketplace where **mentors** publish courses,
+**learners** find, buy and complete them in their own language, and an
+**admin** approves courses and runs the platform. It includes **SkillHub Match**,
+a mentor-matching engine that explains its ranking, and **SkillBot**, an in-app
+assistant that answers from the platform's real data.
 
-The canonical product spec and full feature universe live in **docs/MASTER_PRD.md**.
+Built with **FastAPI + PostgreSQL + Next.js 14**, from the 77-page SRS of an
+AIUB Software Engineering project (24 functional requirements, all implemented).
 
-## Highlights
-- 24/24 SRS functional requirements implemented and covered by automated tests
-- **Global multi-language**: English, Bangla, Hindi, Arabic, Spanish, French, Chinese, Indonesian - with RTL support
-- Public **guest browsing** + category discovery (no login wall)
-- Mentor course creation -> **admin approval** workflow (pending -> published/rejected)
-- Enrollment: free (instant) or paid via a **simulated bank** flow, with PDF receipts
-- Quizzes (timed, pass marks, attempts), assignments (file submission + grading), lesson notes
-- Progress tracking (70% lessons / 30% quizzes) + **certificate PDF** on completion
-- **SkillHub Match**: ranked mentors with match %, breakdown and reasons
-- **SkillBot**: assistant that recommends courses, mentors and answers platform questions
-- Role dashboards: learner / mentor / admin
-- **Portable data layer**: PostgreSQL locally and on serverless (Vercel); file SQLite fallback for zero-config dev
+**Live demo: <https://skillhubprototype-frontend.vercel.app>**
 
-## Tech stack
-| Layer | Tech |
-|---|---|
-| Backend | FastAPI, SQLAlchemy, Pydantic, JWT, fpdf2 (certificate & receipt PDFs) |
-| Database | PostgreSQL (psycopg2 driver); file SQLite fallback when `DATABASE_URL` is unset |
-| Frontend | Next.js 14 (App Router), React 18, Tailwind |
-| Deploy | Vercel (Next.js + a Python function mounted under `/api`) |
+![SkillHub landing page](docs/screenshots/01-landing.png)
 
-Local ports: backend `http://localhost:8030`, frontend `http://localhost:3030`.
+## Demo accounts
 
-## Prerequisites
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL 18 (the bundled local cluster stores its data under the `pgdata` folder)
-
-## Quick start (Windows)
-Run these from the repo root (PowerShell):
-- `run-postgres.cmd` - brings up the SkillHub PostgreSQL cluster on port 5433
-- `run-backend.cmd` - creates the venv, installs deps, and runs uvicorn on http://localhost:8030 (seeds the DB on first run)
-- `run-frontend.cmd` - installs npm deps and starts the dev server on http://localhost:3030
-
-Then open http://localhost:3030 in a browser.
-
-### How the backend finds the database
-`backend/app/db.py` reads the `DATABASE_URL` environment variable:
-- For local dev it auto-loads **`backend/.env`** (git-ignored), which points at the bundled cluster (`postgresql://skillhub@127.0.0.1:5433/skillhub`).
-- A bare `postgresql://` URL is auto-switched to the `psycopg2` driver.
-- With no `DATABASE_URL` set, the app falls back to a file SQLite database (`backend/skillhub.db`) so it still runs with zero configuration.
-- The schema is created and seeded automatically on first backend startup.
-
-## Demo accounts (seeded)
 | Role | Email | Password |
 |---|---|---|
-| Admin | admin@skillhub.dev | Admin123 |
-| Mentor | rifat@skillhub.dev | Mentor123 |
 | Learner | learner@skillhub.dev | Learner123 |
+| Mentor | rifat@skillhub.dev | Mentor123 |
+| Admin | admin@skillhub.dev | Admin123 |
 
-## SRS requirement coverage (all 24)
-1. Signup with name/email/BD 11-digit phone/role + strong password rules
-2. Email OTP verification activates the account (dev OTP surfaced in API for testing)
-3. Login with lockout after 5 failed attempts (30 min); status unverified/active/blocked
-4. Forgot password via OTP + change password from profile
-5. Profile view/edit (name, phone, DOB, country, bio, language, picture)
-6. Course creation by mentors -> admin approval -> published
-7. Lessons with file upload (served from /files/)
-8. Enrollment: free instant, paid via simulated bank (card 12-19 digits, PIN, bank OTP)
-9. Quizzes: timed, passing score, max attempts, per-question review
-10. Assignments: file submission + drafts, mentor grading
-11. Progress tracking (70% lessons / 30% quizzes) + certificate PDF on completion
-12. 1:1 chat learner <-> mentor with attachments (polling)
-13. Multi-language UI across 8 languages with RTL, persisted per user (PUT /auth/profile)
-14. Search + filters (keyword, category, language, max price, min rating)
-15. SkillHub Match: ranked mentor list with match percent, breakdown, reasons
-16. Admin course approval queue (publish/reject/feature)
-17. Admin transaction log (status/date filters, revenue total) + refunds
-18. Mentor transaction view + total earned
-19. Learner transaction history + PDF receipts (SH-YYYYMMDD-XXXX refs)
-20. User management: block, unblock, role change, permanent removal (admins protected)
-21. Payment method management (add, enable/disable - UCB/BRAC/City/bKash seeded)
+Payments and bank OTPs are simulated: no real money moves.
+
+---
+
+## Features
+
+| Role | What they can do |
+|---|---|
+| **Everyone** | Browse the course catalogue without an account · search and filter by keyword, category, language, level, price and rating · use the UI in **8 languages** (English, Bangla, Hindi, Arabic, Spanish, French, Chinese, Indonesian) with **right-to-left** layout for Arabic · ask SkillBot |
+| **Learner** | Sign up with email OTP · enroll free or pay through a simulated bank flow · PDF receipts · lessons, timed quizzes and assignments · progress tracking and a **PDF certificate** on completion · wishlist, reviews, lesson notes and learning goals · notifications · 1:1 chat with mentors · **SkillHub Match** to find a mentor |
+| **Mentor** | Mentor Studio: create courses (sent to the admin for approval), upload lessons, build quizzes and assignments, grade submissions, see students, reply to reviews, track earnings |
+| **Admin** | Admin Console: approve, reject or feature courses · block, unblock or change users' roles · transactions and refunds · payment methods · review moderation · categories · announcements · analytics · CSV exports |
+
+## Screenshots
+
+| Course catalogue (filters) | Course page |
+|---|---|
+| ![Browse](docs/screenshots/02-browse.png) | ![Course](docs/screenshots/03-course.png) |
+| **SkillHub Match: ranked mentors with reasons** | **SkillBot answers from live data** |
+| ![Match](docs/screenshots/04-match.png) | ![SkillBot](docs/screenshots/09-skillbot.png) |
+| **Learner Hub** | **Mentor Studio** |
+| ![Learner hub](docs/screenshots/05-learner-hub.png) | ![Mentor studio](docs/screenshots/06-mentor-studio.png) |
+| **Admin Console: course approval queue** | **Arabic, right-to-left** |
+| ![Admin](docs/screenshots/07-admin-console.png) | ![Arabic RTL](docs/screenshots/08-arabic-rtl.png) |
+
+## How SkillHub Match ranks mentors
+
+`backend/app/engine.py` is pure Python with no database code, so it can be unit
+tested on its own. For a skill and the learner's languages in order of
+preference, each mentor gets a score and a breakdown that explains it:
+
+| Part | Weight | Built from |
+|---|---|---|
+| Skill | 45 % | teaching depth (1–5) and years of experience |
+| Language | 30 % | the mentor's fluency in each of the learner's languages; the first choice counts most |
+| Quality | 25 % | rating, reply time and course-completion rate |
+
+Free text is resolved to a known skill first ("python" → *Python Programming*,
+via aliases), and every result lists its reasons (for example "Depth L4/5 with
+5 yrs teaching", "Rated 4.7 by 240 learners").
+
+## Tech stack
+
+| Layer | Tech |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy, Pydantic, JWT, fpdf2 (certificate and receipt PDFs) |
+| Database | PostgreSQL (psycopg2); falls back to a SQLite file when `DATABASE_URL` isn't set |
+| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS |
+| Tests | pytest + httpx (23 tests: API flows, match engine, product features) |
+| Hosting | Vercel: the Next.js app plus the FastAPI app as a Python service under `/api` |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    B[Browser] --> N[Next.js 14 pages<br/>frontend/app]
+    N -->|fetch /api/*| F[FastAPI<br/>routers]
+    F --> E[SkillHub Match engine]
+    F --> P[PDF reports<br/>certificates, receipts]
+    F -->|SQLAlchemy| DB[(PostgreSQL<br/>or SQLite)]
+```
+
+On Vercel, `frontend/vercel.json` sends `/api/*` to the Python service and
+everything else to Next.js, so the whole app runs on one domain.
+`frontend/api/app/` is a copy of `backend/app/` packaged for that service.
+
+## Run it locally
+
+You need **Python 3.10+** and **Node.js 18+**. PostgreSQL is optional: with no
+`DATABASE_URL`, the backend creates and seeds a SQLite file (`backend/skillhub.db`)
+on first start.
+
+```bash
+# 1. Backend: http://localhost:8030
+cd backend
+python -m venv .venv
+.venv\Scripts\activate        # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --port 8030 --reload
+
+# 2. Frontend: http://localhost:3030 (in a second terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:3030> and log in with a demo account above.
+
+On Windows, `run-backend.cmd` and `run-frontend.cmd` do the same steps.
+To use PostgreSQL instead of SQLite, set `DATABASE_URL`
+(for example `postgresql://user:password@localhost:5432/skillhub`) or put it in
+`backend/.env`. The schema and demo data are created on first start.
+
+## Tests
+
+```bash
+cd backend
+python -m pytest tests -q
+```
+
+The tests use SQLite by default. Set `DATABASE_URL` first to run them against PostgreSQL.
+
+## Security
+
+| Area | How it's handled |
+|---|---|
+| Passwords | PBKDF2-HMAC-SHA256, 120,000 rounds, random salt; strong-password rules at sign-up |
+| Sessions | HS256 JWT holding only the user id and role, 12-hour expiry |
+| Login | account locked for 30 minutes after 5 failed attempts; email OTP to verify accounts and reset passwords |
+| Access control | admin and mentor endpoints check the user's role (`403` otherwise); blocked users get `403` on every logged-in endpoint; new courses stay `pending` until an admin approves them |
+| Production mode | `SKILLHUB_ENV=production` refuses to start without a 32+ character JWT secret and SMTP, stops returning the dev OTP, turns on per-IP rate limits (HTTP 429) for login, sign-up, OTP, password and payment endpoints, and `SKILLHUB_ORIGINS` limits CORS |
+
+All settings are listed in [`backend/.env.example`](backend/.env.example).
+
+## Known limitations
+
+- **Payments are simulated.** A real gateway (Stripe, bKash, SSLCommerz) would be the next step.
+- **Uploads don't persist on Vercel.** Serverless disks are temporary, so
+  uploaded lesson files and pictures disappear between deploys. They need
+  object storage (S3 or Vercel Blob) for real use.
+- **The live demo is shared.** Everyone uses the same demo accounts, so its data can change.
+
+<details>
+<summary><b>All 24 SRS requirements</b></summary>
+
+1. Sign-up with name, email, Bangladeshi 11-digit phone, role and strong-password rules
+2. Email OTP verification activates the account
+3. Login with a 30-minute lockout after 5 failed attempts; status unverified / active / blocked
+4. Forgot password via OTP, and change password from the profile
+5. Profile view and edit (name, phone, date of birth, country, bio, language, picture)
+6. Course creation by mentors → admin approval → published
+7. Lessons with file upload
+8. Enrollment: free (instant) or paid through a simulated bank (card 12–19 digits, PIN, bank OTP)
+9. Quizzes: timed, passing score, maximum attempts, per-question review
+10. Assignments: file submission and drafts, mentor grading
+11. Progress tracking (70 % lessons, 30 % quizzes) and a PDF certificate on completion
+12. 1:1 learner–mentor chat with attachments
+13. Multi-language UI (8 languages, Arabic right-to-left), saved per user
+14. Search and filters (keyword, category, language, maximum price, minimum rating)
+15. SkillHub Match: ranked mentors with match percentage, breakdown and reasons
+16. Admin course approval queue (publish, reject, feature)
+17. Admin transaction log (status and date filters, revenue total) and refunds
+18. Mentor transactions and total earned
+19. Learner transaction history and PDF receipts (`SH-YYYYMMDD-XXXX` references)
+20. User management: block, unblock, change role, remove (admins protected)
+21. Payment methods: add, enable, disable (UCB, BRAC, City Bank, bKash seeded)
 22. Admin analytics: users by role, courses by status, enrollments, revenue, top courses
-23. Role dashboards: learner hub / mentor studio / admin console (/dashboard)
-24. Platform landing + guest browse of published courses (no login wall)
+23. Role dashboards: Learner Hub, Mentor Studio, Admin Console
+24. Public landing page and catalogue for guests
 
-Plus product extras beyond the SRS: notifications center, wishlist, course reviews
-(with mentor replies), lesson notes, learner goals, and the SkillBot concierge.
+Beyond the SRS: notifications, wishlist, reviews with mentor replies, lesson
+notes, learning goals and SkillBot.
 
-## API map
-The FastAPI app mounts routers at the root (except `auth` and `admin`). Health: `GET /api/health` and `GET /health`.
+</details>
 
-- **Auth** - `/auth`: `signup`, `verify`, `login`, `forgot`, `forgot-confirm`, `change-password`, `me`, `profile`, `picture`
-- **Courses** - `/courses`, `/courses/{id}`, nested `lessons`, `quizzes`, `assignments`, `thumbnail`, `resubmit`, quiz `publish`
-- **Learning & assessment** - `/courses/{id}/learn`, `/lessons/{id}/complete`, `/quizzes/{id}` (+ `submit`), `/assignments/{id}/submit` (+ `submissions`), `/courses/{id}/certificate`, `/my/courses`
-- **Enrollment & payments** - `/enroll/free`, `/pay/start`, `/pay/confirm`, `/txns/me`, `/txns/mentor`, `/txns/admin`, `/txns/{id}/receipt`
-- **Chat** - `/chat/threads`, `/chat/{peer_id}` (history + send, `since_id` polling, file attachments)
-- **Match** - `/match`, `/meta`, `/skills/resolve`, `/mentors/{id}`
-- **Mentor studio** - `/mentor/overview`, `/mentor/profile`, `/courses/{id}/students`, `/quizzes/{id}/results`, grade submissions, reorder lessons, reply to reviews
-- **Learner hub** - `/learner/overview`, `/my/certificates`, `/my/results`, `/my/notes`, `/my/goals`, lesson notes, cancel enrollment
-- **Product** - `/notifications` (+ mark read / read-all), `/wishlist`, `/courses/{id}/reviews`
-- **SkillBot** - `/bot/ask`, `/bot/starters`
-- **Admin** - `/admin`: users (status/role/unlock/remove), courses (approve/feature/remove), categories, payment-methods, reviews, enrollments, refunds, broadcast, export, analytics, mentor verification
-- **Files** - `/files/{name}` (uploaded lesson/material assets)
+<details>
+<summary><b>API overview</b></summary>
+
+Health check: `GET /api/health` returns `{ "ok": true, "users": N, "courses": N }`.
+
+| Area | Endpoints |
+|---|---|
+| Auth (`/auth`) | `signup`, `verify`, `login`, `forgot`, `forgot-confirm`, `change-password`, `me`, `profile`, `picture` |
+| Courses | `/courses`, `/courses/{id}` with nested `lessons`, `quizzes`, `assignments`, `thumbnail`, `resubmit` |
+| Learning | `/courses/{id}/learn`, `/lessons/{id}/complete`, `/quizzes/{id}/submit`, `/assignments/{id}/submit`, `/courses/{id}/certificate`, `/my/courses` |
+| Payments | `/enroll/free`, `/pay/start`, `/pay/confirm`, `/txns/me`, `/txns/mentor`, `/txns/admin`, `/txns/{id}/receipt` |
+| Chat | `/chat/threads`, `/chat/{peer_id}` (history, send, polling with `since_id`, attachments) |
+| Match | `/match`, `/meta`, `/skills/resolve`, `/mentors/{id}` |
+| Mentor | `/mentor/overview`, `/mentor/profile`, students, quiz results, grading, lesson order, review replies |
+| Learner | `/learner/overview`, `/my/certificates`, `/my/results`, `/my/notes`, `/my/goals` |
+| Product | `/notifications`, `/wishlist`, `/courses/{id}/reviews` |
+| SkillBot | `/bot/ask`, `/bot/starters` |
+| Admin (`/admin`) | users, courses, categories, payment methods, reviews, enrollments, refunds, broadcast, export, analytics, mentor verification |
+
+</details>
 
 ## Project structure
-- `backend/app/` - `main.py`, `db.py` (models + portable engine), `security.py` (JWT/hashing), `deps.py`, `engine.py` (SkillHub Match), `reports.py` (PDF cert/receipt)
-- `backend/app/routers/` - `auth`, `courses`, `enroll`, `assess`, `chat`, `admin`, `match`, `mentor`, `learner`, `product`, `bot`
-- `backend/tests/` - `test_api.py`, `test_engine.py`, `test_product.py`
-- `frontend/app/` - landing + `browse`, `course`, `learn`, `match`, `chat`, `dashboard`, `mentor`, `profile`, `login`, `signup`, `forgot`
-- `frontend/components/` - `Nav`, `LangContext`, `Chatbot`, `LearnerHub`, `MentorStudio`, `AdminConsole`, `AssessBuilder`, `TxnTable`, `ui`
-- `frontend/lib/` - `api.js`, `i18n.js` (8-language dictionaries)
-- `frontend/api/` - serverless entry (`index.py`) that runs the FastAPI app on Vercel
-- `docs/MASTER_PRD.md` - full product spec and feature universe
-- `pgdata/` - local PostgreSQL cluster data (git-ignored)
 
-## Testing
-From `backend/`, using the venv Python:
-- `.venv\Scripts\python -m pytest tests -q`
-- Tests default to SQLite; set `DATABASE_URL` first to run them against PostgreSQL.
+```
+skillhub_prototype/
+├── backend/
+│   ├── app/
+│   │   ├── main.py        # FastAPI app, CORS, rate limits
+│   │   ├── db.py          # models, PostgreSQL/SQLite engine, demo data
+│   │   ├── security.py    # password hashing, JWT
+│   │   ├── engine.py      # SkillHub Match scoring
+│   │   ├── reports.py     # certificate and receipt PDFs
+│   │   └── routers/       # auth, courses, enroll, assess, chat, match,
+│   │                      # mentor, learner, product, bot, admin
+│   └── tests/             # pytest suite
+├── frontend/
+│   ├── app/               # Next.js pages: browse, course, learn, match, chat,
+│   │                      # dashboard, mentor, profile, login, signup, forgot
+│   ├── components/        # LearnerHub, MentorStudio, AdminConsole, Chatbot, ...
+│   ├── lib/               # api.js, i18n.js (8 languages)
+│   ├── api/               # FastAPI packaged for Vercel
+│   └── vercel.json
+└── docs/
+    ├── MASTER_PRD.md      # full product spec and roadmap
+    └── screenshots/
+```
 
-## Deployment (Vercel)
-- `frontend/` is a Next.js app deployed to Vercel; the FastAPI backend runs as a serverless Python function mounted at `/api` (`frontend/api/index.py`, with `frontend/vercel.json` rewriting `/api/*`).
-- Set `DATABASE_URL` in the Vercel project environment variables to a managed Postgres (Vercel Postgres, Neon, etc.). Because state lives in Postgres, data survives serverless cold starts.
-- The local `backend/.env` and `pgdata/` are git-ignored and never deployed.
-- After deploy, `GET /api/health` should return `{ "ok": true, "users": N, "courses": N }` (the landing page shows these as public social proof).
+## Author
 
-
-## Production configuration & security
-SkillHub has one switch for public use: set `SKILLHUB_ENV=production`. That turns on:
-- **Mandatory JWT secret** - the app refuses to start unless `SKILLHUB_SECRET` is a 32+ char random value (no more forgeable default tokens).
-- **Real email OTP** - codes are only emailed (via `SMTP_*`); the `dev_otp` field is no longer returned. In production the app refuses to start if SMTP is missing, unless you deliberately set `SKILLHUB_ALLOW_DEV_OTP=1` for a private demo.
-- **Rate limiting** - per-IP limits on login/signup/verify/forgot/password-change/payment (HTTP 429 when exceeded).
-- **CORS lockdown** - set `SKILLHUB_ORIGINS` to your frontend origin(s); unset means allow-all (dev convenience only).
-
-Full variable reference lives in **`backend/.env.example`** - copy it to `backend/.env` for local dev and set the same keys in Vercel.
-
-### Still needed before a real public launch
-- **Object storage for uploads**: on serverless the local disk is ephemeral, so lesson/picture uploads do not persist. Mount a persistent volume (Render/Railway/Fly) or front uploads with S3 / Vercel Blob before exposing course materials publicly.
-- **Real payments**: the bank/OTP flow is a simulation (no money moves). Wire a gateway (Stripe / bKash / SSLCommerz) to actually charge.
-- **TLS + managed Postgres**: deploy against a managed database with `?sslmode=require`.
-
-### Security posture (unchanged)
-- Passwords: PBKDF2-HMAC-SHA256, 120k rounds. Sessions: HS256 JWT carrying only user id + role (12h expiry).
-- Blocked users get 403 on every authenticated endpoint; new mentor courses default to `pending` for admin approval.
-## Notes & design
-- JWT carries only the user id + role (12 h expiry); password hashes never leave the backend.
-- Payment and OTP flows are simulations (no real money or email) per SRS dev constraints.
-- Blocked users receive `403` at every authenticated endpoint.
-- New mentor courses are created with status `pending` and notify admins for approval.
-- UI strings live in `frontend/lib/i18n.js`; Arabic renders right-to-left.
+**Durjoy Saha**: design, backend, frontend, tests and deployment.
