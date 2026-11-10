@@ -25,4 +25,8 @@ pgdata/
 .neon
 node_modules/
 .env.local
-.png
+
+# Scratch files: screenshots and logs at the root, helper scripts in backend/
+/*.png
+*.log
+/backend/_*
