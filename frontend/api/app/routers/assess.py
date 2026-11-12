@@ -1,12 +1,13 @@
 """Learning, quizzes, assignments, progress, certificates (SRS 9, 10, 15)."""
 import json, os, uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import db
 from ..deps import get_db, current_user
 from ..reports import certificate_pdf
+from ..uploads import save_upload
 
 router = APIRouter(tags=["assess"])
 
@@ -33,12 +34,8 @@ def _recalc(e, c):
         passed_q >= {q.id for q in quizzes}
 
 
-def _save_upload(file: UploadFile) -> str:
-    os.makedirs(db.UPLOAD_DIR, exist_ok=True)
-    name = uuid.uuid4().hex[:10] + "-" + os.path.basename(file.filename or "file")
-    with open(os.path.join(db.UPLOAD_DIR, name), "wb") as fh:
-        fh.write(file.file.read())
-    return name
+def _save_upload(file: UploadFile, images_only: bool = False) -> str:
+    return save_upload(file, images_only)
 
 
 @router.get("/my/courses")
@@ -134,7 +131,16 @@ def quiz(qid: int, session: Session = Depends(get_db), u: db.User = Depends(curr
     if not qz or not qz.published:
         raise HTTPException(404, "Quiz not found.")
     _enr(session, u, qz.course_id)
+    prev = session.query(db.Submission).filter_by(quiz_id=qid, learner_id=u.id).first()
+    if prev and prev.attempts >= qz.max_attempts:
+        raise HTTPException(400, "Maximum attempts reached for this quiz.")
+    # Opening the quiz starts the clock for this attempt.
+    st = session.query(db.QuizStart).filter_by(quiz_id=qid, learner_id=u.id).first()         or db.QuizStart(quiz_id=qid, learner_id=u.id)
+    st.started = datetime.utcnow()
+    session.add(st)
+    session.commit()
     return {"id": qz.id, "title": qz.title, "time_limit_min": qz.time_limit_min,
+            "seconds_left": qz.time_limit_min * 60,
             "passing_score": qz.passing_score, "max_attempts": qz.max_attempts,
             "questions": [{"id": x.id, "text": x.text,
                            "options": json.loads(x.options)} for x in qz.questions]}
@@ -148,18 +154,27 @@ class QuizIn(BaseModel):
 def submit_quiz(qid: int, body: QuizIn, session: Session = Depends(get_db),
                 u: db.User = Depends(current_user)):
     qz = session.get(db.Quiz, qid)
-    if not qz:
+    if not qz or not qz.published:
         raise HTTPException(404, "Quiz not found.")
     e = _enr(session, u, qz.course_id)
     prev = session.query(db.Submission).filter_by(quiz_id=qid, learner_id=u.id).first()
     if prev and prev.attempts >= qz.max_attempts:
         raise HTTPException(400, "Maximum attempts reached for this quiz.")
+    st = session.query(db.QuizStart).filter_by(quiz_id=qid, learner_id=u.id).first()
+    if not st:
+        raise HTTPException(400, "Open the quiz before submitting it.")
+    # 30 s of grace for the network; later than that the attempt scores 0.
+    late = datetime.utcnow() > st.started + timedelta(minutes=qz.time_limit_min, seconds=30)
+    session.delete(st)
     total = sum(x.marks for x in qz.questions) or 1.0
     got = 0.0
     detail = []
     for x in qz.questions:
-        chosen = body.answers.get(str(x.id))
-        ok = chosen is not None and int(chosen) == x.correct
+        try:
+            chosen = int(body.answers.get(str(x.id)))
+        except (TypeError, ValueError):
+            chosen = None
+        ok = not late and chosen == x.correct
         if ok:
             got += x.marks
         detail.append({"question_id": x.id, "correct": x.correct, "got": ok})
@@ -167,8 +182,9 @@ def submit_quiz(qid: int, body: QuizIn, session: Session = Depends(get_db),
     passed = score >= qz.passing_score
     sub = prev or db.Submission(quiz_id=qid, learner_id=u.id, attempts=0)
     sub.answers = json.dumps(detail)
-    sub.score = score
-    sub.passed = passed
+    # Keep the best result: a worse retake must not undo an earlier pass.
+    sub.score = max(score, prev.score or 0) if prev else score
+    sub.passed = bool(passed or (prev and prev.passed))
     sub.attempts = (prev.attempts + 1) if prev else 1
     sub.submitted = datetime.utcnow()
     session.add(sub)
@@ -188,7 +204,13 @@ def submit_quiz(qid: int, body: QuizIn, session: Session = Depends(get_db),
         db.notify(session, u.id,
                   "Course complete: '%s'. Your certificate is ready!" % c.title,
                   "/learn/%d" % c.id)
+    # Correct answers are revealed only once they can no longer be reused.
+    reveal = sub.passed or sub.attempts >= qz.max_attempts
+    if not reveal:
+        detail = [{"question_id": d["question_id"], "got": d["got"]} for d in detail]
     return {"score_percent": score, "passed": passed, "attempts_used": sub.attempts,
+            "best_score": sub.score, "ever_passed": sub.passed, "late": late,
+            "answers_revealed": reveal,
             "results": detail, "progress": e.progress, "completed": e.completed}
 
 

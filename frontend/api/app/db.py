@@ -118,6 +118,27 @@ class LessonNote(Base):
     updated = Column(DateTime, default=datetime.utcnow)
 
 
+class LoginFail(Base):
+    """Failed logins per account *and* caller IP, so a stranger who types wrong
+    passwords locks out only themselves, not the real owner."""
+    __tablename__ = "login_fails"
+    id = Column(Integer, primary_key=True)
+    email = Column(String, nullable=False, index=True)
+    ip = Column(String, default="")
+    count = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
+    updated = Column(DateTime, default=datetime.utcnow)
+
+
+class QuizStart(Base):
+    """When a learner opened a quiz, so the time limit is enforced on the server."""
+    __tablename__ = "quiz_starts"
+    id = Column(Integer, primary_key=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+    learner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    started = Column(DateTime, default=datetime.utcnow)
+
+
 class Category(Base):
     __tablename__ = "categories"
     name = Column(String, primary_key=True)
@@ -581,6 +602,61 @@ def load_engine_state(session):
                    for l in session.query(MentorLanguage).filter_by(user_id=u.id)],
         ))
     return skills, aliases, lang_names, mentors
+
+
+def remove_course(session, c) -> bool:
+    """Delete a course, or take it offline when learners already joined or paid
+    (their access, receipts and certificates must keep working).
+    Returns True when the course was deleted, False when it was unpublished."""
+    if (session.query(Enrollment).filter_by(course_id=c.id).first()
+            or session.query(Txn).filter_by(course_id=c.id).first()):
+        c.status = "unpublished"
+        c.featured = False
+        c.updated = datetime.utcnow()
+        session.commit()
+        return False
+    quiz_ids = [q.id for q in c.quizzes]
+    lesson_ids = [l.id for l in c.lessons]
+    assign_ids = [a.id for a in c.assignments]
+    if quiz_ids:
+        session.query(Submission).filter(Submission.quiz_id.in_(quiz_ids)).delete(synchronize_session=False)
+        session.query(QuizStart).filter(QuizStart.quiz_id.in_(quiz_ids)).delete(synchronize_session=False)
+    if lesson_ids:
+        session.query(LessonNote).filter(LessonNote.lesson_id.in_(lesson_ids)).delete(synchronize_session=False)
+    if assign_ids:
+        session.query(AssignSubmit).filter(AssignSubmit.assignment_id.in_(assign_ids)).delete(synchronize_session=False)
+    session.query(Review).filter_by(course_id=c.id).delete(synchronize_session=False)
+    session.query(Wishlist).filter_by(course_id=c.id).delete(synchronize_session=False)
+    session.delete(c)
+    session.commit()
+    return True
+
+
+def user_activity(session, uid) -> list:
+    """Records other people rely on; a user who has any is blocked, not deleted."""
+    checks = [("courses", session.query(Course).filter_by(mentor_id=uid)),
+              ("enrollments", session.query(Enrollment).filter_by(learner_id=uid)),
+              ("payments", session.query(Txn).filter_by(learner_id=uid)),
+              ("messages", session.query(ChatMsg).filter((ChatMsg.sender_id == uid) |
+                                                         (ChatMsg.receiver_id == uid))),
+              ("reviews", session.query(Review).filter_by(user_id=uid)),
+              ("quiz results", session.query(Submission).filter_by(learner_id=uid)),
+              ("assignments", session.query(AssignSubmit).filter_by(learner_id=uid))]
+    return [name for name, q in checks if q.first()]
+
+
+def delete_user(session, u) -> None:
+    """Delete a user with no activity, together with the rows only they own."""
+    for model in (Notification, Wishlist, LessonNote, MentorSkill, MentorLanguage):
+        session.query(model).filter_by(user_id=u.id).delete(synchronize_session=False)
+    session.query(QuizStart).filter_by(learner_id=u.id).delete(synchronize_session=False)
+    session.query(Otp).filter_by(email=u.email).delete(synchronize_session=False)
+    session.query(LoginFail).filter_by(email=u.email).delete(synchronize_session=False)
+    p = session.get(MentorProfile, u.id)
+    if p:
+        session.delete(p)
+    session.delete(u)
+    session.commit()
 
 
 def get_user(session, token_payload):

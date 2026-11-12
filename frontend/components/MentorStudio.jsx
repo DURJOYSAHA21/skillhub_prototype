@@ -161,8 +161,7 @@ function CoursesTab({ courses, cats, langs, levels, say, cry, refresh, setSel })
       if (editing) {
         const d = await api("/courses/" + editing, { method: "PUT", body: form });
         await uploadThumb(editing);
-        say(d.status === "pending"
-          ? "Course updated - your changes went straight back to the review queue."
+        say(d.status === "pending" ? d.message || "Course updated - it is back in the review queue."
           : "Course updated.");
         setEditing(0);
         setForm(BLANK);
@@ -180,8 +179,8 @@ function CoursesTab({ courses, cats, langs, levels, say, cry, refresh, setSel })
     catch (e) { cry(e); }
   }
   async function drop(c) {
-    if (!confirm("Delete " + c.title + " with its lessons, quizzes and assignments?")) return;
-    try { await api("/courses/" + c.id, { method: "DELETE" }); say("Course deleted."); refresh(); }
+    if (!confirm("Delete " + c.title + " with its lessons, quizzes and assignments? If learners already joined, it is taken offline instead.")) return;
+    try { const d = await api("/courses/" + c.id, { method: "DELETE" }); say(d.message || "Course deleted."); refresh(); }
     catch (e) { cry(e); }
   }
   return (

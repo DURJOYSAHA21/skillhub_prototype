@@ -16,6 +16,7 @@ def threads(session: Session = Depends(get_db), u: db.User = Depends(current_use
                     or_(db.ChatMsg.sender_id == u.id,
                         db.ChatMsg.receiver_id == u.id)).all()}
     out = []
+    peer_ids.discard(u.id)          # old self-addressed messages are not a conversation
     for pid in peer_ids:
         p = session.get(db.User, pid)
         last = session.query(db.ChatMsg).filter(
@@ -37,16 +38,18 @@ def threads(session: Session = Depends(get_db), u: db.User = Depends(current_use
 def conversation(peer_id: int, since_id: int = 0,
                  session: Session = Depends(get_db),
                  u: db.User = Depends(current_user)):
+    peer = session.get(db.User, peer_id)
+    if not peer or peer_id == u.id:
+        raise HTTPException(404, "User not found.")
     rows = session.query(db.ChatMsg).filter(
         or_(db.ChatMsg.sender_id == u.id, db.ChatMsg.receiver_id == u.id),
         or_(db.ChatMsg.sender_id == peer_id, db.ChatMsg.receiver_id == peer_id),
         db.ChatMsg.id > since_id).order_by(db.ChatMsg.id).limit(200).all()
-    peer = session.get(db.User, peer_id)
     for m in rows:
         if m.receiver_id == u.id and not m.read:
             m.read = True
     session.commit()
-    return {"peer": {"id": peer.id, "name": peer.name, "role": peer.role} if peer else None,
+    return {"peer": {"id": peer.id, "name": peer.name, "role": peer.role},
             "messages": [{"id": m.id, "from": m.sender_id, "to": m.receiver_id,
                           "text": m.text, "file": m.file,
                           "ts": m.ts.strftime("%H:%M")} for m in rows]}
@@ -60,15 +63,17 @@ async def send(peer_id: int, text: str = Form(""),
     peer = session.get(db.User, peer_id)
     if not peer:
         raise HTTPException(404, "User not found.")
+    if peer_id == u.id:
+        raise HTTPException(400, "You can't send a message to yourself.")
+    if file is not None and not file.filename:
+        file = None
     if not text.strip() and not file:
         raise HTTPException(400, "Message is empty.")
-    db.notify(session, peer_id, "%s sent you a message: %s" %
-              (u.name, (text.strip() or "[attachment]")[:70]),
-              "/chat?to=%d" % u.id, "chat")
     m = db.ChatMsg(sender_id=u.id, receiver_id=peer_id, text=text.strip(),
                    file=_save_upload(file) if file else "")
     session.add(m)
     session.commit()
-    if peer_id != u.id:
-        db.notify(session, peer_id, "New message from %s" % u.name, "/chat")
+    db.notify(session, peer_id, "%s sent you a message: %s" %
+              (u.name, (text.strip() or "[attachment]")[:70]),
+              "/chat?to=%d" % u.id, "chat")
     return {"message": "Sent.", "id": m.id}

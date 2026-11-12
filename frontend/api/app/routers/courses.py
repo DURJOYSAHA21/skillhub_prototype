@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .. import db
 from ..deps import get_db, user_from_token
 from ..security import decode_token
+from ..uploads import save_upload
 
 router = APIRouter(tags=["courses"])
 
@@ -118,12 +119,8 @@ class CourseIn(BaseModel):
 from ..deps import current_user
 
 
-def _save_upload(file: UploadFile) -> str:
-    os.makedirs(db.UPLOAD_DIR, exist_ok=True)
-    name = uuid.uuid4().hex[:10] + "-" + os.path.basename(file.filename or "file")
-    with open(os.path.join(db.UPLOAD_DIR, name), "wb") as fh:
-        fh.write(file.file.read())
-    return name
+def _save_upload(file: UploadFile, images_only: bool = False) -> str:
+    return save_upload(file, images_only)
 
 
 @router.post("/courses")
@@ -159,6 +156,14 @@ def edit_course(cid: int, body: CourseIn, session: Session = Depends(get_db),
     c = session.get(db.Course, cid)
     if not c or (c.mentor_id != u.id and u.role != "admin"):
         raise HTTPException(404, "Course not found.")
+    if not body.title.strip():
+        raise HTTPException(400, "Title is required.")
+    # What a learner pays for and sees in the catalogue: changing it on a live
+    # course sends it back to the admin for review.
+    def listing():
+        return tuple((x or "").strip() for x in (c.title, c.description, c.category,
+                                                  c.language, c.level)) + (float(c.price or 0),)
+    reviewed = listing()
     c.title, c.description, c.category = body.title.strip(), body.description, body.category
     c.language, c.duration_hours = body.language, body.duration_hours
     c.price = max(0.0, body.price)
@@ -166,13 +171,23 @@ def edit_course(cid: int, body: CourseIn, session: Session = Depends(get_db),
     c.tags = body.tags.strip()
     c.type = "paid" if c.price > 0 else "free"
     c.updated = datetime.utcnow()
+    message = "Course info updated successfully."
     if c.status == "rejected":
         c.status = "pending"
         db.notify_role(session, "admin",
                        "Rejected course resubmitted for review: '%s'" % c.title,
                        "/dashboard", "course")
+    elif (c.status == "published" and u.role != "admin" and
+          reviewed != listing()):
+        c.status = "pending"
+        c.featured = False
+        db.notify_role(session, "admin",
+                       "Published course edited, please review again: '%s'" % c.title,
+                       "/dashboard", "course")
+        message = ("Changes saved. The course is back in the review queue and will be "
+                   "listed again once an admin approves it. Enrolled learners keep access.")
     session.commit()
-    return {"message": "Course info updated successfully.", "status": c.status}
+    return {"message": message, "status": c.status}
 
 
 @router.put("/courses/{cid}/resubmit")
@@ -201,7 +216,7 @@ async def course_thumbnail(cid: int, request: Request,
     up = form.get("file") if hasattr(form, "get") else None
     if up is None or not hasattr(up, "filename") or not up.filename:
         raise HTTPException(400, "Choose an image file first.")
-    c.thumbnail = _save_upload(up)
+    c.thumbnail = _save_upload(up, images_only=True)
     session.commit()
     return {"message": "Cover image saved.", "thumbnail": c.thumbnail}
 
@@ -212,12 +227,17 @@ def delete_course(cid: int, session: Session = Depends(get_db),
     c = session.get(db.Course, cid)
     if not c or (c.mentor_id != u.id and u.role != "admin"):
         raise HTTPException(404, "Course not found.")
-    mid = c.mentor_id
-    session.delete(c)
-    session.commit()
+    mid, title = c.mentor_id, c.title
+    if not db.remove_course(session, c):
+        if u.role == "admin":
+            db.notify(session, mid, "Your course '%s' was taken offline by the admin team."
+                      % title, "/dashboard", "course")
+        return {"message": "Learners have already joined or paid for this course, so it was "
+                           "taken offline instead of deleted. They keep access.",
+                "status": "unpublished"}
     if u.role == "admin":
         db.notify(session, mid, "Your course '%s' was removed by the admin team."
-                  % c.title, "/dashboard", "course")
+                  % title, "/dashboard", "course")
     return {"message": "Course deleted successfully."}
 
 
@@ -268,6 +288,7 @@ def delete_lesson(lid: int, session: Session = Depends(get_db),
     c = session.get(db.Course, l.course_id) if l else None
     if not l or (c.mentor_id != u.id and u.role != "admin"):
         raise HTTPException(404, "Lesson not found.")
+    session.query(db.LessonNote).filter_by(lesson_id=lid).delete(synchronize_session=False)
     session.delete(l)
     session.commit()
     return {"message": "Lesson removed."}
@@ -360,6 +381,8 @@ def delete_quiz(qid: int, session: Session = Depends(get_db),
     if not qz:
         raise HTTPException(404, "Quiz not found.")
     _own_course(session, qz.course_id, u)
+    session.query(db.Submission).filter_by(quiz_id=qid).delete(synchronize_session=False)
+    session.query(db.QuizStart).filter_by(quiz_id=qid).delete(synchronize_session=False)
     session.delete(qz)
     session.commit()
     return {"message": "Quiz deleted."}

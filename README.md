@@ -69,7 +69,7 @@ via aliases), and every result lists its reasons (for example "Depth L4/5 with
 | Backend | Python, FastAPI, SQLAlchemy, Pydantic, JWT, fpdf2 (certificate and receipt PDFs) |
 | Database | PostgreSQL (psycopg2); falls back to a SQLite file when `DATABASE_URL` isn't set |
 | Frontend | Next.js 14 (App Router), React 18, Tailwind CSS |
-| Tests | pytest + httpx (23 tests: API flows, match engine, product features) |
+| Tests | pytest + httpx (37 tests: API flows, match engine, product features, security and regression checks) |
 | Hosting | Vercel: the Next.js app plus the FastAPI app as a Python service under `/api` |
 
 ## Architecture

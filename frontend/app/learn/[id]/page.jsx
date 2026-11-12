@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import { api, getToken, API } from "@/lib/api";
@@ -15,6 +15,20 @@ export default function LearnPage() {
   const [quiz, setQuiz] = useState(null), [ans, setAns] = useState({}), [res, setRes] = useState(null);
   const [file, setFile] = useState(null), [comment, setComment] = useState("");
   const [open, setOpen] = useState(null);
+  const [left, setLeft] = useState(0);            // seconds left on the quiz clock
+  const ansRef = useRef({}), deadline = useRef(0), submitting = useRef(false);
+  useEffect(() => { ansRef.current = ans; }, [ans]);
+  useEffect(() => {
+    if (!quiz || res) return;
+    const tick = () => {
+      const s = Math.max(0, Math.round((deadline.current - Date.now()) / 1000));
+      setLeft(s);
+      if (s === 0) submitQuiz();                   // time is up: hand in what is answered
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [quiz, res]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!getToken()) { window.location = "/login"; return; }
     load();
@@ -30,14 +44,30 @@ export default function LearnPage() {
   }
   async function openQuiz(qid) {
     setErr(""); setRes(null);
-    try { setQuiz(await api("/quizzes/" + qid)); setAns({}); } catch (x) { setErr(x.message); }
+    try {
+      const q = await api("/quizzes/" + qid);
+      deadline.current = Date.now() + q.seconds_left * 1000;
+      setAns({}); setQuiz(q);
+    } catch (x) { setErr(x.message); }
   }
   async function submitQuiz() {
+    if (submitting.current) return;
+    submitting.current = true;
     setErr("");
     try {
-      const r = await api("/quizzes/" + quiz.id + "/submit", { method: "POST", body: { answers: ans } });
-      setRes(r); setMsg("Score: " + r.score_percent + "% - " + (r.passed ? "PASSED" : "not passed")); load();
+      const r = await api("/quizzes/" + quiz.id + "/submit", { method: "POST", body: { answers: ansRef.current } });
+      setRes(r);
+      setMsg((r.late ? "Time was up, so this attempt scored 0. " : "") +
+        "Score: " + r.score_percent + "% - " + (r.passed ? "PASSED" : "not passed") +
+        (!r.passed && r.ever_passed ? " (your earlier pass still counts, best " + r.best_score + "%)" : ""));
+      load();
     } catch (x) { setErr(x.message); }
+    finally { submitting.current = false; }
+  }
+  function verdict(q) {
+    const r = res.results.find((x) => x.question_id === q.id);
+    if (r?.got) return "Correct";
+    return r && r.correct != null ? "Answer was " + (r.correct + 1) : "Incorrect";
   }
   async function submitAssign(aid, draft) {
     setErr("");
@@ -106,6 +136,7 @@ export default function LearnPage() {
           {quiz && (
             <div>
               <h4>{quiz.title}</h4>
+              {!res && <p className={left <= 30 ? "err" : "muted"}>Time left: {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</p>}
               {quiz.questions.map((q, i) => (
                 <div key={q.id} style={{ marginBottom: 12 }}>
                   <p><b>Q{i + 1}.</b> {q.text}</p>
@@ -115,12 +146,13 @@ export default function LearnPage() {
                         onChange={() => setAns({ ...ans, [String(q.id)]: j })} /> {o}
                     </label>
                   ))}
-                  {res && <p className={res.results.find((x) => x.question_id === q.id)?.got ? "ok" : "err"}>
-                    {res.results.find((x) => x.question_id === q.id)?.got ? "Correct" : "Answer was " + (res.results.find((x) => x.question_id === q.id)?.correct + 1)}</p>}
+                  {res && <p className={res.results.find((x) => x.question_id === q.id)?.got ? "ok" : "err"}>{verdict(q)}</p>}
                 </div>
               ))}
               {!res && <button className="btn" onClick={submitQuiz}>Submit Answers</button>}
               {res && <p className={res.passed ? "ok" : "err"}>Result: {res.score_percent}% ({res.attempts_used}/{quiz.max_attempts} attempts)</p>}
+              {res && !res.answers_revealed && <p className="muted" style={{ fontSize: 13 }}>Correct answers are shown once you pass or use all your attempts.</p>}
+              {res && <button className="btn sm ghost" onClick={() => { setQuiz(null); setRes(null); }}>Back to quizzes</button>}
             </div>
           )}
         </div>

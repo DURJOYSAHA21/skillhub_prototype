@@ -90,6 +90,14 @@ def decode_token(token: str):
         return None
 
 
+def client_ip(request) -> str:
+    """Caller's IP: the first X-Forwarded-For hop (set by Vercel) or the socket peer."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
 def gen_otp(digits: int = 6) -> str:
     return "".join(secrets.choice("0123456789") for _ in range(digits))
 

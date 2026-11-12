@@ -10,10 +10,24 @@ export default function SignupPage() {
   const [f, setF] = useState({ name: "", email: "", phone: "", password: "", confirm_password: "", role: "learner", lang: "en" });
   const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(""), [note, setNote] = useState("");
   const router = useRouter();
   const { lang: uiLang, setLang, tr } = useLang();
   useEffect(() => { document.body.classList.add("page-teal"); return () => document.body.classList.remove("page-teal"); }, []);
+  // Arriving from the login page with an account that was never verified.
+  useEffect(() => {
+    const email = new URLSearchParams(window.location.search).get("verify");
+    if (!email) return;
+    setF((x) => ({ ...x, email })); setStep(2);
+    resend(email, tr("verifyFirst"));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function resend(email, okText) {
+    setErr(""); setNote("");
+    try {
+      const d = await api("/auth/resend", { method: "POST", body: { email } });
+      setDevOtp(d.dev_otp || ""); setNote(okText || tr("codeResent"));
+    } catch (x) { setErr(x.message); }
+  }
   async function go(e) {
     e.preventDefault(); setErr("");
     try {
@@ -65,9 +79,11 @@ export default function SignupPage() {
           {devOtp && <p className="ok" style={{ fontSize: 13 }}>Dev mode — your OTP is: <b>{devOtp}</b></p>}
           <form onSubmit={verify}>
             <label>OTP</label><input value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="6-digit code" />
+            {note && <p className="ok" style={{ fontSize: 13 }}>{note}</p>}
             {err && <p className="err">{err}</p>}
             <button className="btn teal block" style={{ marginTop: 16 }}>{tr("verifyContinue")}</button>
           </form>
+          <p style={{ marginTop: 10 }}><button type="button" className="btn ghost sm" onClick={() => resend(f.email)}>{tr("resendCode")}</button></p>
           <p className="muted" style={{ marginTop: 14 }}><a href="/login">{tr("backToLogin")}</a></p>
         </>)}
       </div>

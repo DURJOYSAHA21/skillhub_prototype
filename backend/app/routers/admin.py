@@ -59,8 +59,11 @@ def delete_user(uid: int, session: Session = Depends(get_db),
         raise HTTPException(404, "User not found.")
     if x.role == "admin":
         raise HTTPException(400, "Cannot delete an admin.")
-    session.delete(x)
-    session.commit()
+    used = db.user_activity(session, uid)
+    if used:
+        raise HTTPException(400, "This account has %s on record, so it can't be deleted. "
+                                 "Block it instead." % ", ".join(used))
+    db.delete_user(session, x)
     return {"message": "User deleted."}
 
 
@@ -259,8 +262,12 @@ def remove_course(cid: int, session: Session = Depends(get_db),
     if not c:
         raise HTTPException(404, "Course not found.")
     mid, title = c.mentor_id, c.title
-    session.delete(c)
-    session.commit()
+    if not db.remove_course(session, c):
+        db.notify(session, mid, "Course '%s' was taken offline by the admin team. Learners "
+                  "who already joined keep access." % title, "/dashboard", "course")
+        return {"message": "Learners have already joined or paid for this course, so it was "
+                           "taken offline instead of deleted. They keep access.",
+                "status": "unpublished"}
     db.notify(session, mid, "Course '%s' was removed by the admin team." % title,
               "/dashboard", "course")
     return {"message": "Course and its lessons/quizzes removed."}
@@ -298,6 +305,8 @@ def set_role(uid: int, body: RoleIn, session: Session = Depends(get_db),
     u = session.get(db.User, uid)
     if not u:
         raise HTTPException(404, "User not found.")
+    if u.role == "admin":
+        raise HTTPException(400, "Cannot change another admin.")
     u.role = body.role
     if body.role == "mentor" and not session.get(db.MentorProfile, uid):
         session.add(db.MentorProfile(user_id=uid, headline="", verified=False))
@@ -314,11 +323,13 @@ def user_detail(uid: int, session: Session = Depends(get_db),
     if not u:
         raise HTTPException(404, "User not found.")
     p = session.get(db.MentorProfile, uid)
+    fails = session.query(db.LoginFail).filter_by(email=u.email).all()
     out = {"id": u.id, "name": u.name, "email": u.email, "phone": u.phone,
            "role": u.role, "status": u.status, "lang": u.lang,
            "created": u.created.strftime("%Y-%m-%d"),
-           "last_login_fail": u.fail_count,
-           "locked": bool(u.locked_until and u.locked_until > datetime.utcnow())}
+           "last_login_fail": max([f.count or 0 for f in fails] or [0]),
+           "locked": any(f.locked_until and f.locked_until > datetime.utcnow()
+                         for f in fails)}
     if u.role == "mentor":
         out["courses"] = [c.title for c in session.query(db.Course)
                           .filter_by(mentor_id=uid).all()]
@@ -345,6 +356,7 @@ def unlock(uid: int, session: Session = Depends(get_db), a: db.User = Depends(_a
         raise HTTPException(404, "User not found.")
     u.locked_until = None
     u.fail_count = 0
+    session.query(db.LoginFail).filter_by(email=u.email).delete(synchronize_session=False)
     session.commit()
     return {"message": "Login lock cleared."}
 

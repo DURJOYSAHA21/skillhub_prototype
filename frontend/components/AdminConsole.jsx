@@ -166,8 +166,8 @@ function AllCourses({ courses, say, cry, refresh }) {
     try { await api("/admin/courses/" + c.id + "/status", { method: "PUT", body: { status: status, note: "Set by the admin team." } }); say("Course is now " + status + "."); refresh(); } catch (e) { cry(e); }
   }
   async function drop(c) {
-    if (!confirm("Delete " + c.title + " permanently (lessons, quizzes, enrollments)?")) return;
-    try { await api("/admin/courses/" + c.id, { method: "DELETE" }); say("Course deleted."); refresh(); } catch (e) { cry(e); }
+    if (!confirm("Delete " + c.title + " with its lessons and quizzes? If learners already joined or paid, it is taken offline instead.")) return;
+    try { const d = await api("/admin/courses/" + c.id, { method: "DELETE" }); say(d.message || "Course deleted."); refresh(); } catch (e) { cry(e); }
   }
   const rows = courses.filter((c) => (!q || c.title.toLowerCase().includes(q.toLowerCase())) && (!st || c.status === st));
   return (
@@ -221,7 +221,7 @@ function Users({ users, say, cry, refresh }) {
     try { await api("/admin/users/" + u.id + "/role", { method: "PUT", body: { role: r } }); say(u.name + " is now a " + r + "."); refresh(); } catch (e) { cry(e); }
   }
   async function drop(u) {
-    if (!confirm("Permanently delete " + u.name + " and all their data?")) return;
+    if (!confirm("Permanently delete " + u.name + "? Accounts with courses, payments or messages can only be blocked.")) return;
     try { await api("/admin/users/" + u.id, { method: "DELETE" }); say("User deleted."); refresh(); } catch (e) { cry(e); }
   }
   async function show(u) {

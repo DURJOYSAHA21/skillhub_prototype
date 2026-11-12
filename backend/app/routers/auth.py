@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import db
 from ..deps import get_db, current_user
 from ..security import (hash_password, verify_password, password_ok, phone_ok,
-                        create_token, gen_otp, allow_dev_otp)
+                        create_token, gen_otp, allow_dev_otp, client_ip)
 
 from .. import mailer
 
@@ -47,7 +47,8 @@ def signup(body: SignupIn, session: Session = Depends(get_db)):
     if not body.name.strip() or not body.email or not body.phone or \
             not body.password or not body.confirm_password or not body.role:
         raise HTTPException(400, "Please enter all required information.")
-    if body.role not in ("admin", "mentor", "learner"):
+    # Admins are created by other admins (Admin Console > Users > role), never by sign-up.
+    if body.role not in ("mentor", "learner"):
         raise HTTPException(400, "Please select a user role.")
     if not EMAIL_RE.match(body.email):
         raise HTTPException(400, "Invalid email format.")
@@ -57,7 +58,7 @@ def signup(body: SignupIn, session: Session = Depends(get_db)):
         raise HTTPException(400, "Password and Confirm Password must match.")
     if not password_ok(body.password):
         raise HTTPException(400, "Password must be >=8 chars with 1 uppercase and 1 number.")
-    if session.query(db.User).filter_by(email=body.email).first():
+    if session.query(db.User).filter_by(email=body.email.lower()).first():
         raise HTTPException(400, "Email is already registered.")
     u = db.User(name=body.name.strip(), email=body.email.lower(),
                 phone=body.phone, password_hash=hash_password(body.password),
@@ -106,13 +107,17 @@ def verify(body: VerifyIn, session: Session = Depends(get_db)):
             "user": _public(u)}
 
 
+class EmailIn(BaseModel):
+    email: str
+
+
 class LoginIn(BaseModel):
     email: str
     password: str
 
 
 @router.post("/login")
-def login(body: LoginIn, session: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, session: Session = Depends(get_db)):
     if not body.email or not body.password:
         raise HTTPException(400, "Email and Password are required.")
     u = session.query(db.User).filter_by(email=body.email.lower()).first()
@@ -120,30 +125,55 @@ def login(body: LoginIn, session: Session = Depends(get_db)):
         raise HTTPException(400, "Email not found.")
     if u.status == "blocked":
         raise HTTPException(403, "Your account has been blocked by the admin.")
-    if u.locked_until and u.locked_until > datetime.utcnow():
-        mins = int((u.locked_until - datetime.utcnow()).total_seconds() // 60) + 1
+    now = datetime.utcnow()
+    fail = session.query(db.LoginFail).filter_by(email=u.email, ip=client_ip(request)).first()
+    if fail and fail.locked_until and fail.locked_until > now:
+        mins = int((fail.locked_until - now).total_seconds() // 60) + 1
         raise HTTPException(403, "Too many failed attempts. Account locked "
                                  "for about %d more minute(s)." % mins)
     if not verify_password(body.password, u.password_hash):
-        u.fail_count = (u.fail_count or 0) + 1
+        fail = fail or db.LoginFail(email=u.email, ip=client_ip(request), count=0)
+        fail.count = (fail.count or 0) + 1
+        fail.updated = now
         msg = "Incorrect password."
-        if u.fail_count >= 5:
-            u.locked_until = datetime.utcnow() + timedelta(minutes=30)
-            u.fail_count = 0
+        if fail.count >= 5:
+            fail.locked_until = now + timedelta(minutes=30)
+            fail.count = 0
             msg = "Too many failed attempts. Account locked for 30 minutes."
-        elif u.fail_count >= 3:
+        elif fail.count >= 3:
             msg = ("Incorrect password. %d attempt(s) left before a "
-                   "30-minute lock." % (5 - u.fail_count))
+                   "30-minute lock." % (5 - fail.count))
+        session.add(fail)
         session.commit()
         raise HTTPException(400, msg)
+    if fail:
+        session.delete(fail)
     u.fail_count = 0
     u.locked_until = None
     session.commit()
+    if u.status != "active":
+        # Right password but the email was never confirmed: no token until it is.
+        return {"verify_required": True, "email": u.email,
+                "message": "Please verify your email first."}
     return {"token": create_token(u.id, u.role), "user": _public(u)}
 
-class EmailIn(BaseModel):
-    email: str
 
+@router.post("/resend")
+def resend(body: EmailIn, session: Session = Depends(get_db)):
+    """Send a fresh sign-up code to an account that has not been verified yet."""
+    u = session.query(db.User).filter_by(email=(body.email or "").lower()).first()
+    if not u:
+        raise HTTPException(400, "Email not found.")
+    if u.status == "active":
+        raise HTTPException(400, "Account already verified. Please log in.")
+    if u.status == "blocked":
+        raise HTTPException(403, "Your account has been blocked by the admin.")
+    code, sent = _issue(session, u.email, "signup", u.id)
+    out = {"message": "A new code has been emailed to you." if sent else
+           "A new code has been generated."}
+    if not sent and allow_dev_otp():
+        out["dev_otp"] = code
+    return out
 
 class ResetIn(BaseModel):
     email: str
@@ -261,6 +291,6 @@ async def upload_picture(request: Request, session: Session = Depends(get_db),
     if up is None or not hasattr(up, "filename") or not up.filename:
         raise HTTPException(400, "Choose an image file first.")
     from .courses import _save_upload
-    u.picture = _save_upload(up)
+    u.picture = _save_upload(up, images_only=True)
     session.commit()
     return {"message": "Photo updated.", "picture": u.picture}

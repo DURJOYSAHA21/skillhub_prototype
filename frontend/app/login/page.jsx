@@ -15,6 +15,10 @@ export default function LoginPage() {
     e.preventDefault(); setErr("");
     try {
       const d = await api("/auth/login", { method: "POST", body: f });
+      if (d.verify_required) {          // right password, email not confirmed yet
+        router.push("/signup?verify=" + encodeURIComponent(d.email));
+        return;
+      }
       saveAuth(d);
       router.push("/browse");
     } catch (x) { setErr(x.message); }

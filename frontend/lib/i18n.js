@@ -50,6 +50,7 @@ const STR = {
     noCoursesBody: "Try a different keyword, or press Reset filters to see everything.",
     hoursWord: "h", saveForLater: "Save for later", removeSaved: "Remove from saved",
     asRole: "Signed in as", role_learner: "Learner", role_mentor: "Mentor", role_admin: "Admin", browseCategories: "Browse by category", coursesWord: "courses", enrollCount: "enrolled",
+    chatTitle: "Messages", conversations: "Conversations", typeMessage: "Type a message...", sendMsg: "Send", sayHello: "Say hello 👋", pickConversation: "Select a conversation on the left.", noConversations: "No conversations yet. Use \"Find a Mentor\" or a course page to message someone.", attachFile: "Attach a file", attachment: "attachment", loading: "Loading...", verifyFirst: "Please verify your email first. We sent you a new code.", resendCode: "Send a new code", codeResent: "A new code has been sent.", backToChats: "All conversations",
   },
   bn: {
     home: "হোম", browse: "কোর্স দেখুন", match: "মেন্টর খুঁজুন", dashboard: "ড্যাশবোর্ড",
@@ -84,6 +85,7 @@ const STR = {
     noCoursesBody: "ভিন্ন কীওয়ার্ড দিন, অথবা ফিল্টার রিসেট চাপুন।",
     hoursWord: "ঘণ্টা", saveForLater: "পরে দেখার জন্য সংরক্ষণ", removeSaved: "সংরক্ষণ থেকে সরান",
     asRole: "লগইন করেছেন", role_learner: "শিক্ষার্থী", role_mentor: "মেন্টর", role_admin: "অ্যাডমিন", browseCategories: "বিভাগ অনুযায়ী দেখুন", coursesWord: "টি কোর্স", enrollCount: "জন ভর্তি হয়েছেন",
+    chatTitle: "বার্তা", conversations: "কথোপকথন", typeMessage: "একটি বার্তা লিখুন...", sendMsg: "পাঠান", sayHello: "হ্যালো বলুন 👋", pickConversation: "বাম দিক থেকে একটি কথোপকথন বেছে নিন।", noConversations: "এখনও কোনো কথোপকথন নেই। কাউকে বার্তা পাঠাতে \"মেন্টর খুঁজুন\" বা কোনো কোর্স পেজ ব্যবহার করুন।", attachFile: "ফাইল যুক্ত করুন", attachment: "সংযুক্তি", loading: "লোড হচ্ছে...", verifyFirst: "আগে আপনার ইমেইল যাচাই করুন। আমরা আপনাকে একটি নতুন কোড পাঠিয়েছি।", resendCode: "নতুন কোড পাঠান", codeResent: "একটি নতুন কোড পাঠানো হয়েছে।", backToChats: "সব কথোপকথন",
   },
   es: {
     home: "Inicio", browse: "Explorar cursos", match: "Buscar mentor", dashboard: "Panel",
@@ -104,6 +106,7 @@ const STR = {
     allCategories: "Todas las categorías", anyLanguage: "Cualquier idioma", anyLevel: "Cualquier nivel",
     resetFilters: "Restablecer filtros", noNotif: "Aún no hay nada: matrículas, pagos y aprobaciones aparecerán aquí.",
     featMultiTitle: "Multi-idioma", featMatchTitle: "Match inteligente", featLoopTitle: "Ciclo completo",
+    chatTitle: "Mensajes", conversations: "Conversaciones", typeMessage: "Escribe un mensaje...", sendMsg: "Enviar", sayHello: "Saluda 👋", pickConversation: "Elige una conversación a la izquierda.", noConversations: "Aún no hay conversaciones. Usa \"Buscar mentor\" o la página de un curso para escribir a alguien.", attachFile: "Adjuntar archivo", attachment: "adjunto", loading: "Cargando...", verifyFirst: "Primero verifica tu correo. Te enviamos un código nuevo.", resendCode: "Enviar un código nuevo", codeResent: "Se envió un código nuevo.", backToChats: "Todas las conversaciones",
   },
   fr: {
     home: "Accueil", browse: "Parcourir les cours", match: "Trouver un mentor", dashboard: "Tableau de bord",
@@ -124,6 +127,7 @@ const STR = {
     allCategories: "Toutes les catégories", anyLanguage: "Toute langue", anyLevel: "Tout niveau",
     resetFilters: "Réinitialiser les filtres", noNotif: "Rien pour l'instant - inscriptions, paiements et approbations apparaîtront ici.",
     featMultiTitle: "Multilingue", featMatchTitle: "Match intelligent", featLoopTitle: "Cycle complet",
+    chatTitle: "Messages", conversations: "Conversations", typeMessage: "Écrivez un message...", sendMsg: "Envoyer", sayHello: "Dites bonjour 👋", pickConversation: "Choisissez une conversation à gauche.", noConversations: "Aucune conversation pour l'instant. Utilisez « Trouver un mentor » ou la page d'un cours pour écrire à quelqu'un.", attachFile: "Joindre un fichier", attachment: "pièce jointe", loading: "Chargement...", verifyFirst: "Vérifiez d'abord votre e-mail. Nous vous avons envoyé un nouveau code.", resendCode: "Envoyer un nouveau code", codeResent: "Un nouveau code a été envoyé.", backToChats: "Toutes les conversations",
   },
   ar: {
     home: "الرئيسية", browse: "تصفّح الدورات", match: "ابحث عن مدرّب", dashboard: "لوحة التحكم",
@@ -144,6 +148,7 @@ const STR = {
     allCategories: "كل الفئات", anyLanguage: "أي لغة", anyLevel: "أي مستوى",
     resetFilters: "إعادة ضبط المرشّحات", noNotif: "لا شيء بعد - ستظهر هنا التسجيلات والمدفوعات والموافقات.",
     featMultiTitle: "متعدد اللغات", featMatchTitle: "مطابقة ذكية", featLoopTitle: "دورة تعلّم كاملة",
+    chatTitle: "الرسائل", conversations: "المحادثات", typeMessage: "اكتب رسالة...", sendMsg: "إرسال", sayHello: "قل مرحبًا 👋", pickConversation: "اختر محادثة من القائمة.", noConversations: "لا توجد محادثات بعد. استخدم «ابحث عن مرشد» أو صفحة دورة لمراسلة أحد.", attachFile: "إرفاق ملف", attachment: "مرفق", loading: "جارٍ التحميل...", verifyFirst: "يرجى تأكيد بريدك الإلكتروني أولًا. أرسلنا إليك رمزًا جديدًا.", resendCode: "إرسال رمز جديد", codeResent: "تم إرسال رمز جديد.", backToChats: "كل المحادثات",
   },
   hi: {
     home: "होम", browse: "कोर्स देखें", match: "मेंटर खोजें", dashboard: "डैशबोर्ड",
@@ -164,6 +169,7 @@ const STR = {
     allCategories: "सभी श्रेणियाँ", anyLanguage: "कोई भी भाषा", anyLevel: "कोई भी स्तर",
     resetFilters: "फ़िल्टर रीसेट करें", noNotif: "अभी कुछ नहीं - नामांकन, भुगतान और स्वीकृतियाँ यहाँ दिखेंगी।",
     featMultiTitle: "बहुभाषी", featMatchTitle: "स्मार्ट मैच", featLoopTitle: "संपूर्ण शिक्षा चक्र",
+    chatTitle: "संदेश", conversations: "बातचीत", typeMessage: "संदेश लिखें...", sendMsg: "भेजें", sayHello: "नमस्ते कहें 👋", pickConversation: "बाईं ओर से कोई बातचीत चुनें।", noConversations: "अभी कोई बातचीत नहीं है। किसी को संदेश भेजने के लिए \"मेंटर खोजें\" या किसी कोर्स पेज का उपयोग करें।", attachFile: "फ़ाइल जोड़ें", attachment: "अटैचमेंट", loading: "लोड हो रहा है...", verifyFirst: "पहले अपना ईमेल सत्यापित करें। हमने आपको नया कोड भेजा है।", resendCode: "नया कोड भेजें", codeResent: "नया कोड भेज दिया गया है।", backToChats: "सभी बातचीत",
   },
   zh: {
     home: "首页", browse: "浏览课程", match: "找导师", dashboard: "仪表盘",
@@ -184,6 +190,7 @@ const STR = {
     allCategories: "所有类别", anyLanguage: "任何语言", anyLevel: "任何级别",
     resetFilters: "重置筛选", noNotif: "暂无内容 - 报名、付款和审批将显示在此处。",
     featMultiTitle: "多语言", featMatchTitle: "智能匹配", featLoopTitle: "完整学习闭环",
+    chatTitle: "消息", conversations: "会话", typeMessage: "输入消息...", sendMsg: "发送", sayHello: "打个招呼 👋", pickConversation: "请从左侧选择一个会话。", noConversations: "还没有会话。可通过“寻找导师”或课程页面给别人发消息。", attachFile: "添加附件", attachment: "附件", loading: "加载中...", verifyFirst: "请先验证你的邮箱。我们已给你发送新的验证码。", resendCode: "发送新验证码", codeResent: "新验证码已发送。", backToChats: "全部会话",
   },
   id: {
     home: "Beranda", browse: "Jelajahi Kursus", match: "Cari Mentor", dashboard: "Dasbor",
@@ -204,6 +211,7 @@ const STR = {
     allCategories: "Semua kategori", anyLanguage: "Bahasa apa pun", anyLevel: "Level apa pun",
     resetFilters: "Atur ulang filter", noNotif: "Belum ada apa pun - pendaftaran, pembayaran, dan persetujuan akan tampil di sini.",
     featMultiTitle: "Multi-bahasa", featMatchTitle: "Pencocokan Cerdas", featLoopTitle: "Lingkaran Belajar Lengkap",
+    chatTitle: "Pesan", conversations: "Percakapan", typeMessage: "Tulis pesan...", sendMsg: "Kirim", sayHello: "Sapa dulu 👋", pickConversation: "Pilih percakapan di sebelah kiri.", noConversations: "Belum ada percakapan. Gunakan \"Cari Mentor\" atau halaman kursus untuk mengirim pesan.", attachFile: "Lampirkan file", attachment: "lampiran", loading: "Memuat...", verifyFirst: "Verifikasi email Anda terlebih dahulu. Kami telah mengirim kode baru.", resendCode: "Kirim kode baru", codeResent: "Kode baru telah dikirim.", backToChats: "Semua percakapan",
   },
 };
 

@@ -4,9 +4,10 @@ import time
 from collections import defaultdict, deque
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from . import db
 from . import security
+from . import uploads
 from .routers import (auth, courses, enroll, assess, chat, admin, match, product,
                      mentor, learner, bot)
 
@@ -28,6 +29,7 @@ _RATE_LIMITS = {
     "/auth/verify": (15, 600),
     "/auth/forgot": (5, 600),
     "/auth/forgot-confirm": (15, 600),
+    "/auth/resend": (5, 600),
     "/auth/change-password": (10, 60),
     "/pay/start": (10, 300),
 }
@@ -42,9 +44,7 @@ async def rate_limit(request: Request, call_next):
         limit = _RATE_LIMITS.get(request.url.path)
         if limit:
             maxn, win = limit
-            fwd = request.headers.get("x-forwarded-for", "")
-            ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")
-            key = (request.url.path, ip)
+            key = (request.url.path, security.client_ip(request))
             now = time.time()
             q = _hits[key]
             while q and now - q[0] > win:
@@ -70,11 +70,7 @@ for r in (auth.router, courses.router, enroll.router, assess.router,
 
 @app.get("/files/{name}")
 def get_file(name: str):
-    safe = os.path.basename(name)
-    path = os.path.join(db.UPLOAD_DIR, safe)
-    if not os.path.isfile(path):
-        raise HTTPException(404, "File not found.")
-    return FileResponse(path)
+    return uploads.serve(name)
 
 
 @app.get("/api/health")

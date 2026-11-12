@@ -64,7 +64,8 @@ def pay_start(body: PayStartIn, session: Session = Depends(get_db),
     if not re.fullmatch(r"\d{4,6}", body.pin):
         raise HTTPException(400, "PIN must be 4-6 digits.")
     from .auth import _issue
-    code, sent = _issue(session, u.email, "payment", u.id)
+    # The bank code only unlocks the course it was requested for.
+    code, sent = _issue(session, u.email, "payment:%d" % c.id, u.id)
     out = {"message": f"OTP sent to {u.email} by the bank (simulated).",
            "amount": c.price}
     if not sent and allow_dev_otp():
@@ -82,10 +83,14 @@ class PayConfirmIn(BaseModel):
 @router.post("/pay/confirm")
 def pay_confirm(body: PayConfirmIn, session: Session = Depends(get_db),
                 u: db.User = Depends(current_user)):
+    if u.role != "learner":
+        raise HTTPException(403, "Only learners can pay.")
     c = session.get(db.Course, body.course_id)
-    if not c:
-        raise HTTPException(404, "Course not found.")
-    if not db.check_otp(session, u.email, "payment", body.otp, u.id):
+    if not c or c.status != "published" or c.price <= 0:
+        raise HTTPException(404, "Paid course not found.")
+    if session.query(db.Enrollment).filter_by(learner_id=u.id, course_id=c.id).first():
+        raise HTTPException(400, "You already have access to this course.")
+    if not db.check_otp(session, u.email, "payment:%d" % c.id, body.otp, u.id):
         session.add(db.Txn(learner_id=u.id, course_id=c.id, amount=c.price,
                            method=body.method, status="failed",
                            ref="SH-FAIL-" + str(random.randint(1000, 9999))))
@@ -96,8 +101,7 @@ def pay_confirm(body: PayConfirmIn, session: Session = Depends(get_db),
                  method=body.method or "Bank", card_last4=(body.card_number or "0000")[-4:],
                  status="success", ref=ref)
     session.add(txn)
-    if not session.query(db.Enrollment).filter_by(learner_id=u.id, course_id=c.id).first():
-        session.add(db.Enrollment(learner_id=u.id, course_id=c.id))
+    session.add(db.Enrollment(learner_id=u.id, course_id=c.id))
     session.commit()
     db.notify(session, u.id,
               "Payment confirmed for '%s' (%s)" % (c.title, ref),
@@ -139,13 +143,17 @@ def txns_admin(status: str = "", date_from: str = "", date_to: str = "",
     if u.role != "admin":
         raise HTTPException(403, "Admin only.")
     q = session.query(db.Txn)
+    try:
+        start = datetime.fromisoformat(date_from) if date_from else None
+        end = datetime.fromisoformat(date_to) + timedelta(days=1) if date_to else None
+    except ValueError:
+        raise HTTPException(400, "Dates must be YYYY-MM-DD.")
     if status:
         q = q.filter(db.Txn.status == status)
-    if date_from:
-        q = q.filter(db.Txn.created >= datetime.fromisoformat(date_from))
-    if date_to:
-        q = q.filter(db.Txn.created <= datetime.fromisoformat(date_to) +
-                    timedelta(days=1))
+    if start:
+        q = q.filter(db.Txn.created >= start)
+    if end:
+        q = q.filter(db.Txn.created <= end)
     rows = q.order_by(db.Txn.id.desc()).all()
     total = sum(t.amount for t in rows if t.status == "success")
     return {"transactions": _txn_rows(session, rows), "total_revenue": total}
@@ -158,10 +166,11 @@ def receipt(txn_id: int, session: Session = Depends(get_db),
     if not t:
         raise HTTPException(404, "Transaction not found.")
     c = session.get(db.Course, t.course_id)
-    m = session.get(db.User, c.mentor_id)
+    m = session.get(db.User, c.mentor_id) if c else None
     learner = session.get(db.User, t.learner_id)
-    if u.role != "admin" and u.id not in (t.learner_id, m.id):
+    if u.role != "admin" and u.id not in (t.learner_id, m.id if m else None):
         raise HTTPException(403, "Not your transaction.")
-    pdf = receipt_pdf(t, c.title, learner.name, m.name)
+    pdf = receipt_pdf(t, c.title if c else "(removed course)",
+                      learner.name if learner else "", m.name if m else "")
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f"inline; filename=receipt-{t.ref}.pdf"})
